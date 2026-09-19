@@ -33,13 +33,13 @@ profile android_app flags=(attach_disconnected, complain, mediate_deleted) {
   mount -> /,
   umount /storage**,
 
-  ptrace (read,readby,trace,tracedby) peer=android_app//&lxc-waydroid,
-  ptrace (read,trace,readby,tracedby) peer=lxc-waydroid,
-  ptrace (read,trace,readby,tracedby) peer=adbd//&lxc-waydroid,
+  ptrace (read,readby,trace,tracedby) peer=android_app//&lxc-androidbox,
+  ptrace (read,trace,readby,tracedby) peer=lxc-androidbox,
+  ptrace (read,trace,readby,tracedby) peer=adbd//&lxc-androidbox,
 
-  signal (send,receive) peer=android_app//&lxc-waydroid,
-  signal (receive) peer=adbd//&lxc-waydroid,
-  signal (send,receive) peer=lxc-waydroid,
+  signal (send,receive) peer=android_app//&lxc-androidbox,
+  signal (receive) peer=adbd//&lxc-androidbox,
+  signal (send,receive) peer=lxc-androidbox,
   signal (receive),
 
   /acct** rwkl,

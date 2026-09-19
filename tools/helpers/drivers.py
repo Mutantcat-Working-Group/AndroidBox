@@ -129,48 +129,48 @@ def setupBinderNodes(args):
                 has_binder = True
                 args.BINDER_DRIVER = node
         if not has_binder:
-            raise OSError('Binder node "binder" for waydroid not found')
+            raise OSError('Binder node "binder" for androidbox not found')
 
         for node in VNDBINDER_DRIVERS:
             if os.path.exists("/dev/" + node):
                 has_vndbinder = True
                 args.VNDBINDER_DRIVER = node
         if not has_vndbinder:
-            raise OSError('Binder node "vndbinder" for waydroid not found')
+            raise OSError('Binder node "vndbinder" for androidbox not found')
 
         for node in HWBINDER_DRIVERS:
             if os.path.exists("/dev/" + node):
                 has_hwbinder = True
                 args.HWBINDER_DRIVER = node
         if not has_hwbinder:
-            raise OSError('Binder node "hwbinder" for waydroid not found')
+            raise OSError('Binder node "hwbinder" for androidbox not found')
     else:
         for node in BINDER_DRIVERS[:-1]:
             if os.path.exists("/dev/" + node):
                 has_binder = True
                 args.BINDER_DRIVER = node
         if not has_binder:
-            raise OSError('Binder node "binder" for waydroid not found')
+            raise OSError('Binder node "binder" for androidbox not found')
 
         for node in VNDBINDER_DRIVERS[:-1]:
             if os.path.exists("/dev/" + node):
                 has_vndbinder = True
                 args.VNDBINDER_DRIVER = node
         if not has_vndbinder:
-            raise OSError('Binder node "vndbinder" for waydroid not found')
+            raise OSError('Binder node "vndbinder" for androidbox not found')
 
         for node in HWBINDER_DRIVERS[:-1]:
             if os.path.exists("/dev/" + node):
                 has_hwbinder = True
                 args.HWBINDER_DRIVER = node
         if not has_hwbinder:
-            raise OSError('Binder node "hwbinder" for waydroid not found')
+            raise OSError('Binder node "hwbinder" for androidbox not found')
 
 def loadBinderNodes(args):
     cfg = tools.config.load(args)
-    args.BINDER_DRIVER = cfg["waydroid"]["binder"]
-    args.VNDBINDER_DRIVER = cfg["waydroid"]["vndbinder"]
-    args.HWBINDER_DRIVER = cfg["waydroid"]["hwbinder"]
+    args.BINDER_DRIVER = cfg["androidbox"]["binder"]
+    args.VNDBINDER_DRIVER = cfg["androidbox"]["vndbinder"]
+    args.HWBINDER_DRIVER = cfg["androidbox"]["hwbinder"]
     # These might not be in cfg on package upgrade
-    args.BINDER_PROTOCOL = cfg["waydroid"].get("binder_protocol")
-    args.SERVICE_MANAGER_PROTOCOL = cfg["waydroid"].get("service_manager_protocol")
+    args.BINDER_PROTOCOL = cfg["androidbox"].get("binder_protocol")
+    args.SERVICE_MANAGER_PROTOCOL = cfg["androidbox"].get("service_manager_protocol")

@@ -19,7 +19,7 @@ def get(args):
         if session["state"] == "FROZEN":
             cm.Freeze()
     except (dbus.DBusException, KeyError):
-        logging.error("WayDroid session is stopped")
+        logging.error("AndroidBox session is stopped")
 
 def set(args):
     try:
@@ -35,4 +35,4 @@ def set(args):
         if session["state"] == "FROZEN":
             cm.Freeze()
     except (dbus.DBusException, KeyError):
-        logging.error("WayDroid session is stopped")
+        logging.error("AndroidBox session is stopped")

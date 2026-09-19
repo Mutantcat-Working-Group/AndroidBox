@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.mutantcat.androidbox.Container
+Exec=/usr/bin/androidbox container start
+User=root
+SystemdService=androidbox-container.service

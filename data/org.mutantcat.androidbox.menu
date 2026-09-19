@@ -1,0 +1,12 @@
+<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+"http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
+<Menu>
+	<Name>Applications</Name>
+	<Menu>
+		<Name>AndroidBox</Name>
+		<Directory>org.mutantcat.androidbox.directory</Directory>
+		<Include>
+			<Category>X-AndroidBox-App</Category>
+		</Include>
+	</Menu>
+</Menu>

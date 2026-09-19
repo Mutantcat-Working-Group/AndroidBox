@@ -19,7 +19,7 @@ class DbusSessionManager(dbus.service.Object):
         self.looper = looper
         dbus.service.Object.__init__(self, bus, object_path)
 
-    @dbus.service.method("id.waydro.SessionManager", in_signature='', out_signature='')
+    @dbus.service.method("org.mutantcat.androidbox.SessionManager", in_signature='', out_signature='')
     def Stop(self):
         do_stop(self.args, self.looper)
         stop_container(quit_session=False)
@@ -39,7 +39,7 @@ def service(args, looper):
 
 def start(args, unlocked_cb=None, background=True):
     try:
-        _name = dbus.service.BusName("id.waydro.Session", dbus.SessionBus(), do_not_queue=True)
+        _name = dbus.service.BusName("org.mutantcat.androidbox.Session", dbus.SessionBus(), do_not_queue=True)
     except dbus.exceptions.NameExistsException:
         logging.error("Session is already running")
         if unlocked_cb:
@@ -59,16 +59,16 @@ def start(args, unlocked_cb=None, background=True):
     else:
         xdg_runtime_dir = session["xdg_runtime_dir"]
         if xdg_runtime_dir == "None" or not xdg_runtime_dir:
-            logging.error("XDG_RUNTIME_DIR is not set; please don't start a Waydroid session with 'sudo'!")
+            logging.error("XDG_RUNTIME_DIR is not set; please don't start a AndroidBox session with 'sudo'!")
             sys.exit(1)
         wayland_socket_path = os.path.join(xdg_runtime_dir, wayland_display)
     if not os.path.exists(wayland_socket_path):
         logging.error(f"Wayland socket '{wayland_socket_path}' doesn't exist; are you running a Wayland compositor?")
         sys.exit(1)
 
-    waydroid_data = session["waydroid_data"]
-    if not os.path.isdir(waydroid_data):
-        os.makedirs(waydroid_data)
+    androidbox_data = session["androidbox_data"]
+    if not os.path.isdir(androidbox_data):
+        os.makedirs(androidbox_data)
 
     dpi = tools.helpers.props.host_get(args, "ro.sf.lcd_density")
     if dpi == "":
@@ -101,7 +101,7 @@ def start(args, unlocked_cb=None, background=True):
         if e.get_dbus_name().startswith("org.freedesktop.DBus.Python"):
             logging.error(e.get_dbus_message().splitlines()[-1])
         else:
-            logging.error("WayDroid container is not listening")
+            logging.error("AndroidBox container is not listening")
         sys.exit(0)
 
     services.user_manager.start(args, session, unlocked_cb)

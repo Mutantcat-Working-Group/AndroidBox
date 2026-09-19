@@ -1,0 +1,15 @@
+[Unit]
+Description=AndroidBox guest ADB bridge (authenticated by Android)
+After=androidbox-container.service
+Requires=androidbox-container.service
+
+[Service]
+ExecStart=/usr/local/bin/androidbox-adb-forward
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=AndroidBox Container
+
+[Service]
+UMask=0022
+BusName=org.mutantcat.androidbox.Container
+ExecStart=/usr/bin/androidbox container start
+
+[Install]
+WantedBy=multi-user.target

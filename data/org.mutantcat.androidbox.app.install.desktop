@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install in AndroidBox
+Name[ru]=Установить в AndroidBox
+NoDisplay=true
+MimeType=application/vnd.android.package-archive
+Exec=androidbox app install %f
+Icon=org.mutantcat.androidbox

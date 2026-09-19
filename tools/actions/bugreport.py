@@ -12,20 +12,20 @@ import tarfile
 import tempfile
 import time
 
-WAYDROID = sys.argv[0]
-TARBALL = "waydroid-bugreport.tar.xz"
+ANDROIDBOX = sys.argv[0]
+TARBALL = "androidbox-bugreport.tar.xz"
 
 def logcat(output_path):
     with open(output_path, "w+") as fd:
-        return subprocess.Popen(["sudo", WAYDROID, "logcat"], stdout=fd, stderr=sys.stderr, stdin=None)
+        return subprocess.Popen(["sudo", ANDROIDBOX, "logcat"], stdout=fd, stderr=sys.stderr, stdin=None)
 
 def dmesg(params, output_path):
     with open(output_path, "w+") as fd:
         return subprocess.Popen(["sudo", "dmesg", "-T"] + params, stdout=fd, stderr=fd, stdin=None)
 
-def waydroid_session(output_path):
+def androidbox_session(output_path):
     with open(output_path, "w+") as fd:
-        return subprocess.Popen([WAYDROID, "session", "start"], stdout=fd, stderr=fd, stdin=None, start_new_session=True)
+        return subprocess.Popen([ANDROIDBOX, "session", "start"], stdout=fd, stderr=fd, stdin=None, start_new_session=True)
 
 def clear_line():
     sys.stdout.write("\33[2K\r")
@@ -61,8 +61,8 @@ def bugreport(args):
 The following information will be collected:
   - System kernel logs (kmsg)
   - Android system and user logs (logcat)
-  - Waydroid container manager logs (/var/lib/waydroid/waydroid.log)
-  - Waydroid configuration files (/var/lib/waydroid/*)
+  - AndroidBox container manager logs (/var/lib/androidbox/androidbox.log)
+  - AndroidBox configuration files (/var/lib/androidbox/*)
 
 The information will be stored on your machine.
 
@@ -93,8 +93,8 @@ Please authenticate as administrator in order to read system logs.
         pass
 
     if not session:
-        print("Waydroid session not found. Trying to start one...")
-        procs.append(waydroid_session(logfile("session.txt")))
+        print("AndroidBox session not found. Trying to start one...")
+        procs.append(androidbox_session(logfile("session.txt")))
         sleep_progress(10)
         try:
             session = tools.helpers.ipc.DBusContainerService().GetSession()
@@ -104,7 +104,7 @@ Please authenticate as administrator in order to read system logs.
     if session:
         print("\n\
 \033[1mPlease try to reproduce the problem now.\033[0m\n\
-Waydroid will collect logs for up to 5 minutes. You may interrupt this operation earlier.\n\
+AndroidBox will collect logs for up to 5 minutes. You may interrupt this operation earlier.\n\
 ")
         procs.append(logcat(logfile("logcat.txt")))
         procs.append(dmesg(["-w"], logfile("dmesg.txt")))
@@ -123,11 +123,11 @@ Waydroid will collect logs for up to 5 minutes. You may interrupt this operation
     try:
         with tarfile.open(TARBALL, "w:xz", preset=9) as tar:
             files = [
-                "/var/lib/waydroid/waydroid.log",
-                "/var/lib/waydroid/waydroid.cfg",
-                "/var/lib/waydroid/waydroid_base.prop",
-                "/var/lib/waydroid/waydroid.prop",
-                "/var/lib/waydroid/lxc",
+                "/var/lib/androidbox/androidbox.log",
+                "/var/lib/androidbox/androidbox.cfg",
+                "/var/lib/androidbox/androidbox_base.prop",
+                "/var/lib/androidbox/androidbox.prop",
+                "/var/lib/androidbox/lxc",
             ] + logfiles
 
             for f in files:

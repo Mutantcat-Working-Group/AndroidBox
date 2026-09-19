@@ -19,7 +19,7 @@ def getCardFromRender(args, dev):
 
 def getDriNode(args):
     cfg = tools.config.load(args)
-    node = cfg["waydroid"].get("drm_device")
+    node = cfg["androidbox"].get("drm_device")
     if node:
         if not os.path.exists(node):
             raise OSError("The specified drm_device {} does not exist".format(node))

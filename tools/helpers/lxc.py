@@ -126,7 +126,7 @@ def generate_nodes_lxc_config(args):
 
     return nodes
 
-LXC_APPARMOR_PROFILE = "lxc-waydroid"
+LXC_APPARMOR_PROFILE = "lxc-androidbox"
 def get_apparmor_status(args):
     enabled = False
     if shutil.which("aa-enabled"):
@@ -141,12 +141,12 @@ def get_apparmor_status(args):
     return enabled
 
 def set_lxc_config(args):
-    lxc_path = tools.config.defaults["lxc"] + "/waydroid"
+    lxc_path = tools.config.defaults["lxc"] + "/androidbox"
     lxc_ver = get_lxc_version(args)
     if lxc_ver == 0:
         raise OSError("LXC is not installed")
     config_paths = tools.config.tools_src + "/data/configs/config_"
-    seccomp_profile = tools.config.tools_src + "/data/configs/waydroid.seccomp"
+    seccomp_profile = tools.config.tools_src + "/data/configs/androidbox.seccomp"
 
     config_snippets = [ config_paths + "base" ]
     # lxc v1 and v2 are bit special because some options got renamed later
@@ -164,10 +164,10 @@ def set_lxc_config(args):
     tools.helpers.run.user(args, command)
     command = ["sed", "-i", "s/LXCARCH/{}/".format(platform.machine()), lxc_path + "/config"]
     tools.helpers.run.user(args, command)
-    post_stop_script = tools.config.tools_src + "/data/scripts/waydroid-post-stop.sh"
+    post_stop_script = tools.config.tools_src + "/data/scripts/androidbox-post-stop.sh"
     command = ["sed", "-i", "s#LXCPOSTSTOP#{}#".format(post_stop_script), lxc_path + "/config"]
     tools.helpers.run.user(args, command)
-    command = ["cp", "-fpr", seccomp_profile, lxc_path + "/waydroid.seccomp"]
+    command = ["cp", "-fpr", seccomp_profile, lxc_path + "/androidbox.seccomp"]
     tools.helpers.run.user(args, command)
     if get_apparmor_status(args):
         command = ["sed", "-i", "-E", "/lxc.aa_profile|lxc.apparmor.profile/ s/unconfined/{}/g".format(LXC_APPARMOR_PROFILE), lxc_path + "/config"]
@@ -209,10 +209,10 @@ def generate_session_lxc_config(args, session):
     pulse_container_socket = os.path.join(tools.config.defaults["container_pulse_runtime_path"], "native")
     make_entry(pulse_host_socket, pulse_container_socket[1:])
 
-    if not make_entry(session["waydroid_data"], "data", options="rbind 0 0"):
+    if not make_entry(session["androidbox_data"], "data", options="rbind 0 0"):
         raise OSError("Failed to bind userdata")
 
-    lxc_path = tools.config.defaults["lxc"] + "/waydroid"
+    lxc_path = tools.config.defaults["lxc"] + "/androidbox"
     config_nodes_tmp_path = args.work + "/config_session"
     with open(config_nodes_tmp_path, "w") as f:
         f.writelines(node + "\n" for node in nodes)
@@ -357,7 +357,7 @@ def make_base_props(args):
     if prop_fp != "":
         props.append("ro.build.fingerprint=" + prop_fp)
 
-    # now append/override with values in [properties] section of waydroid.cfg
+    # now append/override with values in [properties] section of androidbox.cfg
     cfg = tools.config.load(args)
     for k, v in cfg["properties"].items():
         for idx, elem in enumerate(props):
@@ -365,7 +365,7 @@ def make_base_props(args):
                 props.pop(idx)
         props.append(k+"="+v)
 
-    with open(args.work + "/waydroid_base.prop", "w") as f:
+    with open(args.work + "/androidbox_base.prop", "w") as f:
         f.writelines(prop + "\n" for prop in props)
 
 
@@ -398,7 +398,7 @@ def setup_host_perms(args):
         shutil.copy(filename, tools.config.defaults["host_perms"])
 
 def status(args):
-    command = ["lxc-info", "-P", tools.config.defaults["lxc"], "-n", "waydroid", "-sH"]
+    command = ["lxc-info", "-P", tools.config.defaults["lxc"], "-n", "androidbox", "-sH"]
     try:
         return tools.helpers.run.user(args, command, output_return=True).strip()
     except Exception:
@@ -419,7 +419,7 @@ def wait_for_running(args):
 
 def start(args):
     command = ["lxc-start", "-P", tools.config.defaults["lxc"],
-               "-F", "-n", "waydroid", "--", "/init"]
+               "-F", "-n", "androidbox", "--", "/init"]
     tools.helpers.run.user(args, command, output="background")
     wait_for_running(args)
     # Workaround lxc-start changing stdout/stderr permissions to 700
@@ -428,16 +428,16 @@ def start(args):
 
 def stop(args):
     command = ["lxc-stop", "-P",
-               tools.config.defaults["lxc"], "-n", "waydroid", "-k"]
+               tools.config.defaults["lxc"], "-n", "androidbox", "-k"]
     tools.helpers.run.user(args, command)
 
 def freeze(args):
-    command = ["lxc-freeze", "-P", tools.config.defaults["lxc"], "-n", "waydroid"]
+    command = ["lxc-freeze", "-P", tools.config.defaults["lxc"], "-n", "androidbox"]
     tools.helpers.run.user(args, command)
 
 def unfreeze(args):
     command = ["lxc-unfreeze", "-P",
-               tools.config.defaults["lxc"], "-n", "waydroid"]
+               tools.config.defaults["lxc"], "-n", "androidbox"]
     tools.helpers.run.user(args, command)
 
 ANDROID_ENV = {
@@ -456,7 +456,7 @@ def android_env_attach_options(args):
     local_env = ANDROID_ENV.copy()
     # Include CLASSPATH env that was generated by Android
     command = ["lxc-attach", "-P", tools.config.defaults["lxc"],
-               "-n", "waydroid", "--clear-env", "--",
+               "-n", "androidbox", "--clear-env", "--",
                "/system/bin/cat" ,"/data/system/environ/classpath"]
     allowed = ["CLASSPATH", "SYSTEMSERVER"]
     with suppress(Exception):
@@ -475,10 +475,10 @@ def shell(args):
     if state == "FROZEN":
         unfreeze(args)
     elif state != "RUNNING":
-        logging.error("WayDroid container is {}".format(state))
+        logging.error("AndroidBox container is {}".format(state))
         return
     command = ["lxc-attach", "-P", tools.config.defaults["lxc"],
-               "-n", "waydroid", "--clear-env"]
+               "-n", "androidbox", "--clear-env"]
     command.extend(android_env_attach_options(args))
     if args.uid is not None:
         command.append("--uid="+str(args.uid))

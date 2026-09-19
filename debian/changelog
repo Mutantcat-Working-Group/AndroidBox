@@ -1,3 +1,10 @@
+androidbox (1.0.20260919-1) unstable; urgency=medium
+
+  * Rebrand host runtime and desktop IDs as AndroidBox / org.mutantcat.androidbox.
+  * Keep upstream Android image protocols for compatibility.
+
+ -- tyza66 <shun_@outlook.com>  Sat, 19 Sep 2026 12:00:00 +0800
+
 waydroid (1.6.3) bullseye; urgency=medium
 
   * tools: Fix all occurrences of unused variable warning

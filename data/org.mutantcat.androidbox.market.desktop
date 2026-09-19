@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=AndroidBox Market
+Comment=Android Market Protocol Handler
+Comment[ru]=Обработчик ссылок Android Market
+Exec=androidbox app intent android.intent.action.VIEW %u
+Icon=org.mutantcat.androidbox
+Type=Application
+Encoding=UTF-8
+Terminal=false
+NoDisplay=true
+Categories=Utility;
+MimeType=x-scheme-handler/market;
+X-KDE-Protocols=market;

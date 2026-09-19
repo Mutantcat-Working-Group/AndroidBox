@@ -68,7 +68,7 @@ def pipe_read(args, process, output_to_stdout=False, output_return=False,
     foreground_pipe() below.
 
     :param process: subprocess.Popen instance
-    :param output_to_stdout: copy all output to waydroid's stdout
+    :param output_to_stdout: copy all output to androidbox's stdout
     :param output_return: when set to True, output_return_buffer will be
                           extended
     :param output_return_buffer: list of bytes that gets extended with the
@@ -140,7 +140,7 @@ def foreground_pipe(args, cmd, working_dir=None, output_to_stdout=False,
 
     :param cmd: command as list, e.g. ["echo", "string with spaces"]
     :param working_dir: path in host system where the command should run
-    :param output_to_stdout: copy all output to waydroid's stdout
+    :param output_to_stdout: copy all output to androidbox's stdout
     :param output_return: return the output of the whole program
     :param output_timeout: kill the process when it doesn't print any output
                            after a certain time (configured with --timeout)
@@ -178,7 +178,7 @@ def foreground_pipe(args, cmd, working_dir=None, output_to_stdout=False,
                 logging.info("Process did not write any output for " +
                              str(args.timeout) + " seconds. Killing it.")
                 logging.info("NOTE: The timeout can be increased with"
-                             " 'waydroid -t'.")
+                             " 'androidbox -t'.")
                 kill_command(args, process.pid, sudo)
                 continue
 
@@ -203,7 +203,7 @@ def foreground_tui(cmd, working_dir=None):
     vim, nano or the kernel's menuconfig) work properly.
     """
 
-    logging.debug("*** output passed to waydroid stdout, not to this log"
+    logging.debug("*** output passed to androidbox stdout, not to this log"
                   " ***")
     process = subprocess.Popen(cmd, cwd=working_dir)
     return process.wait()
@@ -268,9 +268,9 @@ def core(args, log_message, cmd, working_dir=None, output="log",
     :param working_dir: path in host system where the command should run
     :param output: where to write the output (stdout and stderr) of the
                    process. We almost always write to the log file, which can
-                   be read with "waydroid log" (output values: "log",
+                   be read with "androidbox log" (output values: "log",
                    "stdout", "interactive", "background"), so it's easy to
-                   trace what waydroid does.
+                   trace what androidbox does.
 
                    The exceptions are "tui" (text-based user interface), where
                    it does not make sense to write to the log file (think of
@@ -281,7 +281,7 @@ def core(args, log_message, cmd, working_dir=None, output="log",
                    When the output is not set to "interactive", "tui",
                    "background" or "pipe", we kill the process if it does not
                    output anything for 5 minutes (time can be set with
-                   "waydroid --timeout").
+                   "androidbox --timeout").
 
                    The table below shows all possible values along with
                    their properties. "wait" indicates that we wait for the
@@ -315,7 +315,7 @@ def core(args, log_message, cmd, working_dir=None, output="log",
     if args.sudo_timer and sudo:
         sudo_timer_start(args)
 
-    # Log simplified and full command (waydroid -v)
+    # Log simplified and full command (androidbox -v)
     logging.debug(log_message)
     logging.verbose("run: " + str(cmd))
 

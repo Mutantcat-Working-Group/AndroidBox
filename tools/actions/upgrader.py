@@ -8,25 +8,25 @@ import tools.config
 
 def get_config(args):
     cfg = tools.config.load(args)
-    args.arch = cfg["waydroid"]["arch"]
-    args.images_path = cfg["waydroid"]["images_path"]
-    args.vendor_type = cfg["waydroid"]["vendor_type"]
-    args.system_ota = cfg["waydroid"]["system_ota"]
-    args.vendor_ota = cfg["waydroid"]["vendor_ota"]
+    args.arch = cfg["androidbox"]["arch"]
+    args.images_path = cfg["androidbox"]["images_path"]
+    args.vendor_type = cfg["androidbox"]["vendor_type"]
+    args.system_ota = cfg["androidbox"]["system_ota"]
+    args.vendor_ota = cfg["androidbox"]["vendor_ota"]
     args.session = None
 
 def migration(args):
     try:
-        old_ver = tools.helpers.props.file_get(args, args.work + "/waydroid_base.prop", "waydroid.tools_version")
+        old_ver = tools.helpers.props.file_get(args, args.work + "/androidbox_base.prop", "waydroid.tools_version")
         if versiontuple(old_ver) <= versiontuple("1.3.4"):
-            chmod_paths = ["cache_http", "host-permissions", "lxc", "images", "rootfs", "data", "waydroid_base.prop", "waydroid.prop", "waydroid.cfg"]
+            chmod_paths = ["cache_http", "host-permissions", "lxc", "images", "rootfs", "data", "androidbox_base.prop", "androidbox.prop", "androidbox.cfg"]
             tools.helpers.run.user(args, ["chmod", "-R", "g-w,o-w"] + [os.path.join(args.work, f) for f in chmod_paths], check=False)
             tools.helpers.run.user(args, ["chmod", "g-w,o-w", args.work], check=False)
             os.remove(os.path.join(args.work, "session.cfg"))
         if versiontuple(old_ver) <= versiontuple("1.6.0"):
             # Because we now default adb to secure, disable auto_adb to avoid prompting the user on every session startup
             cfg = tools.config.load(args)
-            cfg["waydroid"]["auto_adb"] = "False"
+            cfg["androidbox"]["auto_adb"] = "False"
             tools.config.save(args, cfg)
     except Exception as e:
         logging.debug("Error during migration: %s", e)
@@ -34,7 +34,7 @@ def migration(args):
 def upgrade(args):
     get_config(args)
     status = "STOPPED"
-    if os.path.exists(tools.config.defaults["lxc"] + "/waydroid"):
+    if os.path.exists(tools.config.defaults["lxc"] + "/androidbox"):
         status = helpers.lxc.status(args)
     if status != "STOPPED":
         logging.info("Stopping container")
@@ -51,7 +51,7 @@ def upgrade(args):
         if args.images_path not in tools.config.defaults["preinstalled_images_paths"]:
             helpers.images.get(args)
         else:
-            logging.info("Upgrade refused because Waydroid was configured to load pre-installed image from {}.".format(args.images_path))
+            logging.info("Upgrade refused because AndroidBox was configured to load pre-installed image from {}.".format(args.images_path))
     helpers.drivers.probeAshmemDriver(args)
     helpers.lxc.setup_host_perms(args)
     helpers.lxc.set_lxc_config(args)

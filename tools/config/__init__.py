@@ -12,10 +12,10 @@ from tools.config.save import save
 #
 # Exported variables (internal configuration)
 #
-version = "1.6.3"
+version = "1.0.20260919"
 tools_src = os.path.normpath(os.path.realpath(__file__) + "/../../..")
 
-# Keys saved in the config file (mostly what we ask in 'waydroid init')
+# Keys saved in the config file (mostly what we ask in 'androidbox init')
 config_keys = ["arch",
                "images_path",
                "vendor_type",
@@ -30,13 +30,13 @@ config_keys = ["arch",
 # overridden on the commandline)
 defaults = {
     "arch": "arm64",
-    "work": "/var/lib/waydroid",
+    "work": "/var/lib/androidbox",
     "vendor_type": "MAINLINE",
     "system_datetime": "0",
     "vendor_datetime": "0",
     "preinstalled_images_paths": [
-        "/etc/waydroid-extra/images",
-        "/usr/share/waydroid-extra/images",
+        "/etc/androidbox-extra/images",
+        "/usr/share/androidbox-extra/images",
     ],
     "suspend_action": "freeze",
     "mount_overlays": "True",
@@ -68,13 +68,13 @@ session_defaults = {
     "lcd_density": "0",
     "background_start": "true"
 }
-session_defaults["waydroid_user_state"] = session_defaults["xdg_data_home"] + "/waydroid"
-session_defaults["waydroid_data"] = session_defaults["waydroid_user_state"] + "/data"
+session_defaults["androidbox_user_state"] = session_defaults["xdg_data_home"] + "/androidbox"
+session_defaults["androidbox_data"] = session_defaults["androidbox_user_state"] + "/data"
 if session_defaults["pulse_runtime_path"] == "None":
     session_defaults["pulse_runtime_path"] = session_defaults["xdg_runtime_dir"] + "/pulse"
 
 channels_defaults = {
-    "config_path": "/usr/share/waydroid-extra/channels.cfg",
+    "config_path": "/usr/share/androidbox-extra/channels.cfg",
     "system_channel": "https://ota.waydro.id/system",
     "vendor_channel": "https://ota.waydro.id/vendor",
     "rom_type": "lineage",

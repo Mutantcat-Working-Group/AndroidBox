@@ -11,20 +11,20 @@ def load(args):
     if os.path.isfile(args.config):
         cfg.read(args.config)
 
-    if "waydroid" not in cfg:
-        cfg["waydroid"] = {}
+    if "androidbox" not in cfg:
+        cfg["androidbox"] = {}
 
     for key in tools.config.defaults:
-        if key in tools.config.config_keys and key not in cfg["waydroid"]:
-            cfg["waydroid"][key] = str(tools.config.defaults[key])
+        if key in tools.config.config_keys and key not in cfg["androidbox"]:
+            cfg["androidbox"][key] = str(tools.config.defaults[key])
 
         # We used to save default values in the config, which can *not* be
-        # configured in "waydroid init". That doesn't make sense, we always
+        # configured in "androidbox init". That doesn't make sense, we always
         # want to use the defaults from tools/config/__init__.py in that case,
-        if key not in tools.config.config_keys and key in cfg["waydroid"]:
+        if key not in tools.config.config_keys and key in cfg["androidbox"]:
             logging.debug("Ignored unconfigurable and possibly outdated"
-                          " default value from config: {}".format(cfg['waydroid'][key]))
-            del cfg["waydroid"][key]
+                          " default value from config: {}".format(cfg['androidbox'][key]))
+            del cfg["androidbox"][key]
 
     if "properties" not in cfg:
         cfg["properties"] = {}

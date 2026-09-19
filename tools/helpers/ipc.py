@@ -5,8 +5,8 @@
 import os
 import dbus
 
-def DBusContainerService(object_path="/ContainerManager", intf="id.waydro.ContainerManager"):
-    return dbus.Interface(dbus.SystemBus().get_object("id.waydro.Container", object_path), intf)
+def DBusContainerService(object_path="/ContainerManager", intf="org.mutantcat.androidbox.ContainerManager"):
+    return dbus.Interface(dbus.SystemBus().get_object("org.mutantcat.androidbox.Container", object_path), intf)
 
-def DBusSessionService(object_path="/SessionManager", intf="id.waydro.SessionManager"):
-    return dbus.Interface(dbus.SessionBus().get_object("id.waydro.Session", object_path), intf)
+def DBusSessionService(object_path="/SessionManager", intf="org.mutantcat.androidbox.SessionManager"):
+    return dbus.Interface(dbus.SessionBus().get_object("org.mutantcat.androidbox.Session", object_path), intf)

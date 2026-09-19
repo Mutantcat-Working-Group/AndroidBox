@@ -18,8 +18,8 @@ def start(args, session, unlocked_cb=None):
     apps_dir = Path(session["xdg_data_home"]) / "applications"
     apps_dir.mkdir(0o700, exist_ok=True)
 
-    waydroid_user_state_dir = Path(session["waydroid_user_state"])
-    waydroid_data_icons_dir = Path(session["waydroid_data"]) / "icons"
+    androidbox_user_state_dir = Path(session["androidbox_user_state"])
+    androidbox_data_icons_dir = Path(session["androidbox_data"]) / "icons"
 
     system_apps = [
         "com.android.calculator2",
@@ -62,21 +62,21 @@ def start(args, session, unlocked_cb=None):
         except GLib.GError:
             return False
 
-    # Migrate waydroid user configs after upgrade
+    # Migrate androidbox user configs after upgrade
     def user_migration():
-        if not any(apps_dir.glob('waydroid.*.desktop')):
+        if not any(apps_dir.glob('org.mutantcat.androidbox.app.*.desktop')):
             # first ever run, no need to migrate
             return
 
-        migrated_main_path = waydroid_user_state_dir / ".migrated-main-desktop-file"
+        migrated_main_path = androidbox_user_state_dir / ".migrated-main-desktop-file"
         if not migrated_main_path.exists():
-            main_app_path = apps_dir / "Waydroid.desktop"
+            main_app_path = apps_dir / "org.mutantcat.androidbox.desktop"
             main_app_path.unlink(missing_ok=True)
             migrated_main_path.touch()
 
-        migrated_apps_path = waydroid_user_state_dir / ".migrated-app-settings-desktop-action"
+        migrated_apps_path = androidbox_user_state_dir / ".migrated-app-settings-desktop-action"
         if not migrated_apps_path.exists():
-            for app in apps_dir.glob("waydroid.*.desktop"):
+            for app in apps_dir.glob("org.mutantcat.androidbox.app.*.desktop"):
                 with suppress(GLib.GError):
                     desktop_file = GLib.KeyFile()
                     flags = GLib.KeyFileFlags.KEEP_COMMENTS | GLib.KeyFileFlags.KEEP_TRANSLATIONS
@@ -96,7 +96,7 @@ def start(args, session, unlocked_cb=None):
             return
 
         packageName = appInfo["packageName"]
-        desktop_file_path = apps_dir / f"waydroid.{packageName}.desktop"
+        desktop_file_path = apps_dir / f"org.mutantcat.androidbox.app.{packageName}.desktop"
 
         showApp = False
         for cat in appInfo["categories"]:
@@ -116,17 +116,17 @@ def start(args, session, unlocked_cb=None):
 
         desktop_file.set_string("Desktop Entry", "Type", "Application")
         desktop_file.set_string("Desktop Entry", "Name", appInfo["name"])
-        desktop_file.set_string("Desktop Entry", "Exec", f"waydroid app launch {packageName}")
-        desktop_file.set_string("Desktop Entry", "Icon", str(waydroid_data_icons_dir / f"{packageName}.png"))
-        glib_key_file_prepend_string_list(desktop_file, "Desktop Entry", "Categories", ["X-WayDroid-App"])
+        desktop_file.set_string("Desktop Entry", "Exec", f"androidbox app launch {packageName}")
+        desktop_file.set_string("Desktop Entry", "Icon", str(androidbox_data_icons_dir / f"{packageName}.png"))
+        glib_key_file_prepend_string_list(desktop_file, "Desktop Entry", "Categories", ["X-AndroidBox-App"])
         desktop_file.set_string_list("Desktop Entry", "X-Purism-FormFactor", ["Workstation", "Mobile"])
         glib_key_file_prepend_string_list(desktop_file, "Desktop Entry", "Actions", ["app-settings"])
         if packageName in system_apps and not glib_key_file_has_value(desktop_file, "Desktop Entry", "NoDisplay"):
             desktop_file.set_boolean("Desktop Entry", "NoDisplay", True)
 
         desktop_file.set_string("Desktop Action app-settings", "Name", "App Settings")
-        desktop_file.set_string("Desktop Action app-settings", "Exec", f"waydroid app intent android.settings.APPLICATION_DETAILS_SETTINGS package:{packageName}")
-        desktop_file.set_string("Desktop Action app-settings", "Icon", str(waydroid_data_icons_dir / "com.android.settings.png"))
+        desktop_file.set_string("Desktop Action app-settings", "Exec", f"androidbox app intent android.settings.APPLICATION_DETAILS_SETTINGS package:{packageName}")
+        desktop_file.set_string("Desktop Action app-settings", "Icon", str(androidbox_data_icons_dir / "com.android.settings.png"))
 
         desktop_file.save_to_file(str(desktop_file_path))
 
@@ -136,7 +136,7 @@ def start(args, session, unlocked_cb=None):
 
         user_migration()
 
-        if cfg["waydroid"]["auto_adb"] == "True":
+        if cfg["androidbox"]["auto_adb"] == "True":
             with suppress(RuntimeError):
                 tools.helpers.net.adb_connect(args)
 
@@ -145,8 +145,8 @@ def start(args, session, unlocked_cb=None):
             appsList = platformService.getAppsInfo()
             for app in appsList:
                 updateDesktopFile(app)
-            for existing in apps_dir.glob("waydroid.*.desktop"):
-                if existing.name not in map(lambda appInfo: f"waydroid.{appInfo['packageName']}.desktop", appsList):
+            for existing in apps_dir.glob("org.mutantcat.androidbox.app.*.desktop"):
+                if existing.name not in map(lambda appInfo: f"org.mutantcat.androidbox.app.{appInfo['packageName']}.desktop", appsList):
                     existing.unlink()
         if unlocked_cb:
             unlocked_cb()
@@ -154,7 +154,7 @@ def start(args, session, unlocked_cb=None):
     def packageStateChanged(mode, packageName, uid):
         platformService = IPlatform.get_service(args)
         if platformService:
-            desktop_file_path = apps_dir / f"waydroid.{packageName}.desktop"
+            desktop_file_path = apps_dir / f"org.mutantcat.androidbox.app.{packageName}.desktop"
             if mode == IUserMonitor.PACKAGE_REMOVED:
                 desktop_file_path.unlink(missing_ok=True)
             else:

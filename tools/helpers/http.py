@@ -20,7 +20,7 @@ def download(args, url, prefix, cache=True, loglevel=logging.INFO,
                        get a hash of the URL after the prefix)
         :param cache: if True, and url is cached, do not download it again
         :param loglevel: change to logging.DEBUG to only display the download
-                         message in 'waydroid log', not in stdout. We use
+                         message in 'androidbox log', not in stdout. We use
                          this when downloading many APKINDEX files at once, no
                          point in showing a dozen messages.
         :param allow_404: do not raise an exception when the server responds

@@ -43,15 +43,15 @@ def get_vendor_type(args):
 def setup_config(args):
     cfg = tools.config.load(args)
     args.arch = helpers.arch.host()
-    cfg["waydroid"]["arch"] = args.arch
+    cfg["androidbox"]["arch"] = args.arch
 
     args.vendor_type = get_vendor_type(args)
-    cfg["waydroid"]["vendor_type"] = args.vendor_type
+    cfg["androidbox"]["vendor_type"] = args.vendor_type
 
     helpers.drivers.setupBinderNodes(args)
-    cfg["waydroid"]["binder"] = args.BINDER_DRIVER
-    cfg["waydroid"]["vndbinder"] = args.VNDBINDER_DRIVER
-    cfg["waydroid"]["hwbinder"] = args.HWBINDER_DRIVER
+    cfg["androidbox"]["binder"] = args.BINDER_DRIVER
+    cfg["androidbox"]["vndbinder"] = args.VNDBINDER_DRIVER
+    cfg["androidbox"]["hwbinder"] = args.HWBINDER_DRIVER
 
     has_preinstalled_images = False
     preinstalled_images_paths = tools.config.defaults["preinstalled_images_paths"]
@@ -70,13 +70,13 @@ def setup_config(args):
 
     if not args.images_path:
         args.images_path = tools.config.defaults["images_path"]
-    cfg["waydroid"]["images_path"] = args.images_path
+    cfg["androidbox"]["images_path"] = args.images_path
 
     if has_preinstalled_images:
-        cfg["waydroid"]["system_ota"] = args.system_ota = "None"
-        cfg["waydroid"]["vendor_ota"] = args.vendor_ota = "None"
-        cfg["waydroid"]["system_datetime"] = tools.config.defaults["system_datetime"]
-        cfg["waydroid"]["vendor_datetime"] = tools.config.defaults["vendor_datetime"]
+        cfg["androidbox"]["system_ota"] = args.system_ota = "None"
+        cfg["androidbox"]["vendor_ota"] = args.vendor_ota = "None"
+        cfg["androidbox"]["system_datetime"] = tools.config.defaults["system_datetime"]
+        cfg["androidbox"]["vendor_datetime"] = tools.config.defaults["vendor_datetime"]
         tools.config.save(args, cfg)
         return True
 
@@ -116,14 +116,14 @@ def setup_config(args):
         raise ValueError(
             "Failed to get vendor OTA channel: {}".format(vendor_ota))
 
-    if args.system_ota != cfg["waydroid"].get("system_ota"):
-        cfg["waydroid"]["system_datetime"] = tools.config.defaults["system_datetime"]
-    if args.vendor_ota != cfg["waydroid"].get("vendor_ota"):
-        cfg["waydroid"]["vendor_datetime"] = tools.config.defaults["vendor_datetime"]
+    if args.system_ota != cfg["androidbox"].get("system_ota"):
+        cfg["androidbox"]["system_datetime"] = tools.config.defaults["system_datetime"]
+    if args.vendor_ota != cfg["androidbox"].get("vendor_ota"):
+        cfg["androidbox"]["vendor_datetime"] = tools.config.defaults["vendor_datetime"]
 
-    cfg["waydroid"]["vendor_type"] = args.vendor_type
-    cfg["waydroid"]["system_ota"] = args.system_ota
-    cfg["waydroid"]["vendor_ota"] = args.vendor_ota
+    cfg["androidbox"]["vendor_type"] = args.vendor_type
+    cfg["androidbox"]["system_ota"] = args.system_ota
+    cfg["androidbox"]["vendor_ota"] = args.vendor_ota
     tools.config.save(args, cfg)
     return True
 
@@ -136,7 +136,7 @@ def init(args):
 
     status = "STOPPED"
     session = None
-    if os.path.exists(tools.config.defaults["lxc"] + "/waydroid"):
+    if os.path.exists(tools.config.defaults["lxc"] + "/androidbox"):
         status = helpers.lxc.status(args)
     if status != "STOPPED":
         if "running_init_in_service" in args:
@@ -187,7 +187,7 @@ class DbusInitializer(dbus.service.Object):
         dbus.service.Object.__init__(self, bus, object_path)
 
     @helpers.logging.log_exceptions
-    @dbus.service.method("id.waydro.Initializer", in_signature='a{ss}', out_signature='', sender_keyword="sender", connection_keyword="conn")
+    @dbus.service.method("org.mutantcat.androidbox.Initializer", in_signature='a{ss}', out_signature='', sender_keyword="sender", connection_keyword="conn")
     def Init(self, params, sender=None, conn=None):
         if self.worker_thread is not None:
             self.worker_thread.kill()
@@ -196,27 +196,27 @@ class DbusInitializer(dbus.service.Object):
         channels_cfg = tools.config.load_channels()
         no_auth = params["system_channel"] == channels_cfg["channels"]["system_channel"] and \
                   params["vendor_channel"] == channels_cfg["channels"]["vendor_channel"]
-        if no_auth or ensure_polkit_auth(sender, conn, "id.waydro.Initializer.Init"):
+        if no_auth or ensure_polkit_auth(sender, conn, "org.mutantcat.androidbox.Initializer.Init"):
             self.worker_thread = remote_init_server(self.args, self, params)
         else:
             raise PermissionError("Polkit: Authentication failed")
 
     @helpers.logging.log_exceptions
-    @dbus.service.method("id.waydro.Initializer", in_signature='', out_signature='')
+    @dbus.service.method("org.mutantcat.androidbox.Initializer", in_signature='', out_signature='')
     def Cancel(self):
         if self.worker_thread is not None:
             self.worker_thread.kill()
             self.worker_thread.join()
 
-    @dbus.service.signal("id.waydro.Initializer", signature='s')
+    @dbus.service.signal("org.mutantcat.androidbox.Initializer", signature='s')
     def ProgressChanged(self, message):
         pass
 
-    @dbus.service.signal("id.waydro.Initializer", signature='')
+    @dbus.service.signal("org.mutantcat.androidbox.Initializer", signature='')
     def Finished(self):
         pass
 
-    @dbus.service.signal("id.waydro.Initializer", signature='')
+    @dbus.service.signal("org.mutantcat.androidbox.Initializer", signature='')
     def Interrupted(self):
         pass
 
@@ -310,13 +310,13 @@ def remote_init_client(args):
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk
 
-    class WaydroidInitWindow(Gtk.Window):
+    class AndroidBoxInitWindow(Gtk.Window):
         def __init__(self):
-            super().__init__(title="Initialize Waydroid")
+            super().__init__(title="Initialize AndroidBox")
             channels_cfg = tools.config.load_channels()
 
             self.set_default_size(600, 250)
-            self.set_icon_name("waydroid")
+            self.set_icon_name("org.mutantcat.androidbox")
 
             grid = Gtk.Grid(row_spacing=6, column_spacing=6, margin=10, column_homogeneous=True)
             grid.set_hexpand(True)
@@ -424,7 +424,7 @@ def remote_init_client(args):
         def on_destroy(self, _):
             if self.initializing:
                 try:
-                    tools.helpers.ipc.DBusContainerService("/Initializer", "id.waydro.Initializer").Cancel()
+                    tools.helpers.ipc.DBusContainerService("/Initializer", "org.mutantcat.androidbox.Initializer").Cancel()
                 except Exception as e:
                     logging.debug("Unexpected error while cancelling initializer: %s", e)
             Gtk.main_quit()
@@ -433,12 +433,12 @@ def remote_init_client(args):
             for signal in self.bus_signals:
                 signal.remove()
 
-            self.draw("\nWaiting for waydroid container service...\n")
+            self.draw("\nWaiting for androidbox container service...\n")
             self.bus_signals = []
             self.initializing = True
 
             try:
-                initializer = tools.helpers.ipc.DBusContainerService("/Initializer", "id.waydro.Initializer")
+                initializer = tools.helpers.ipc.DBusContainerService("/Initializer", "org.mutantcat.androidbox.Initializer")
 
                 self.bus_signals.append(initializer.connect_to_signal("ProgressChanged", self.on_progress))
                 self.bus_signals.append(initializer.connect_to_signal("Finished", self.on_finished))
@@ -455,8 +455,8 @@ def remote_init_client(args):
             except Exception as e:
                 self.draw(f"{e}\n")
 
-    GLib.set_prgname("Waydroid")
-    win = WaydroidInitWindow()
+    GLib.set_prgname("AndroidBox")
+    win = AndroidBoxInitWindow()
 
     win.show_all()
     win.outTextView.hide()

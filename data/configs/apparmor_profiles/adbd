@@ -43,13 +43,13 @@ profile adbd flags=(attach_disconnected,mediate_deleted,complain) {
   capability sys_resource,
   capability fowner,
 
-  ptrace (read,readby,trace,tracedby) peer=lxc-waydroid,
-  ptrace (read,readby,trace,tracedby) peer=android_app//&lxc-waydroid,
-  ptrace (read,readby,trace,tracedby) peer=adbd//&lxc-waydroid,
+  ptrace (read,readby,trace,tracedby) peer=lxc-androidbox,
+  ptrace (read,readby,trace,tracedby) peer=android_app//&lxc-androidbox,
+  ptrace (read,readby,trace,tracedby) peer=adbd//&lxc-androidbox,
 
-  signal (send,receive) peer=lxc-waydroid,
-  signal (send,receive) peer=android_app//&lxc-waydroid,
-  signal (send) peer=adbd//&lxc-waydroid,
+  signal (send,receive) peer=lxc-androidbox,
+  signal (send,receive) peer=android_app//&lxc-androidbox,
+  signal (send) peer=adbd//&lxc-androidbox,
   signal (receive),
   
 }

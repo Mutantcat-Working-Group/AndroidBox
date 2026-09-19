@@ -24,11 +24,11 @@ def start(args, session):
         # By reading the spec, I believe app_icon should be pointing to the desktop entry Icon=
         # but when we set it plasmashell uses it in place of image-data.
         # Ignore app_icon and use desktop-entry to show the app icon.
-        # app_icon = f"file://{waydroid_data}/icons/{package_name}.png"
+        # app_icon = f"file://{androidbox_data}/icons/{package_name}.png"
         app_icon = ""
         actions_flat = [s for action in actions for s in (action.id, action.label)]
         hints = {
-            "desktop-entry": f"waydroid.{package_name}",
+            "desktop-entry": f"org.mutantcat.androidbox.app.{package_name}",
             "resident": dbus.types.Boolean(resident),
             "transient": dbus.types.Boolean(transient),
             "urgency": dbus.types.Byte(urgency),

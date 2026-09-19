@@ -1,4 +1,4 @@
-Source: waydroid
+Source: androidbox
 Maintainer: Erfan Abdi <erfangplus@gmail.com>
 Section: misc
 Priority: optional
@@ -7,10 +7,10 @@ Build-Depends: debhelper (>= 10),
                python3,
                dh-apparmor
 Standards-Version: 4.5.0.3
-Vcs-Browser: https://github.com/waydroid/waydroid
-Vcs-Git: https://github.com/waydroid/waydroid.git
+Vcs-Browser: https://github.com/Mutantcat-Working-Group/AndroidBox
+Vcs-Git: https://github.com/Mutantcat-Working-Group/AndroidBox.git
 
-Package: waydroid
+Package: androidbox
 Architecture: all
 Depends: ${misc:Depends},
          ${python3:Depends},
@@ -25,5 +25,5 @@ Depends: ${misc:Depends},
 	 iptables
 Recommends: ca-certificates,
 Description: Android™ application support
- waydroid allows running a separate Android™ environment
+ androidbox allows running a separate Android™ environment
  confined to a LXC container.

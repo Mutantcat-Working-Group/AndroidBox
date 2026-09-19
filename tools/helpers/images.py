@@ -24,7 +24,7 @@ def sha256sum(f):
 
 def get(args):
     cfg = tools.config.load(args)
-    system_ota = cfg["waydroid"]["system_ota"]
+    system_ota = cfg["androidbox"]["system_ota"]
     system_request = helpers.http.retrieve(system_ota)
     if system_request[0] != 200:
         raise ValueError(
@@ -34,7 +34,7 @@ def get(args):
         raise ValueError("No images found on system channel")
 
     for system_response in system_responses:
-        if system_response['datetime'] > int(cfg["waydroid"]["system_datetime"]):
+        if system_response['datetime'] > int(cfg["androidbox"]["system_datetime"]):
             images_zip = helpers.http.download(
                 args, system_response['url'], system_response['filename'], cache=False)
             logging.info("Validating system image")
@@ -47,12 +47,12 @@ def get(args):
                 logging.info("Extracting to " + args.images_path)
                 with zipfile.ZipFile(f, 'r') as zip_ref:
                     zip_ref.extractall(args.images_path)
-            cfg["waydroid"]["system_datetime"] = str(system_response['datetime'])
+            cfg["androidbox"]["system_datetime"] = str(system_response['datetime'])
             tools.config.save(args, cfg)
             os.remove(images_zip)
             break
 
-    vendor_ota = cfg["waydroid"]["vendor_ota"]
+    vendor_ota = cfg["androidbox"]["vendor_ota"]
     vendor_request = helpers.http.retrieve(vendor_ota)
     if vendor_request[0] != 200:
         raise ValueError(
@@ -62,7 +62,7 @@ def get(args):
         raise ValueError("No images found on vendor channel")
 
     for vendor_response in vendor_responses:
-        if vendor_response['datetime'] > int(cfg["waydroid"]["vendor_datetime"]):
+        if vendor_response['datetime'] > int(cfg["androidbox"]["vendor_datetime"]):
             images_zip = helpers.http.download(
                 args, vendor_response['url'], vendor_response['filename'], cache=False)
             logging.info("Validating vendor image")
@@ -75,7 +75,7 @@ def get(args):
                 logging.info("Extracting to " + args.images_path)
                 with zipfile.ZipFile(f, 'r') as zip_ref:
                     zip_ref.extractall(args.images_path)
-            cfg["waydroid"]["vendor_datetime"] = str(vendor_response['datetime'])
+            cfg["androidbox"]["vendor_datetime"] = str(vendor_response['datetime'])
             tools.config.save(args, cfg)
             os.remove(images_zip)
             break
@@ -84,7 +84,7 @@ def get(args):
 def validate(args, channel, f):
     # Verify that the zip comes from the channel
     cfg = tools.config.load(args)
-    channel_url = cfg["waydroid"][channel]
+    channel_url = cfg["androidbox"][channel]
     channel_request = helpers.http.retrieve(channel_url)
     if channel_request[0] != 200:
         return False
@@ -98,13 +98,13 @@ def validate(args, channel, f):
 
 def replace(args, system_zip, system_time, vendor_zip, vendor_time):
     cfg = tools.config.load(args)
-    args.images_path = cfg["waydroid"]["images_path"]
+    args.images_path = cfg["androidbox"]["images_path"]
     if os.path.exists(system_zip):
         with open(system_zip, 'rb') as f:
             if validate(args, "system_ota", f):
                 with zipfile.ZipFile(f, 'r') as zip_ref:
                     zip_ref.extractall(args.images_path)
-                cfg["waydroid"]["system_datetime"] = str(system_time)
+                cfg["androidbox"]["system_datetime"] = str(system_time)
             else:
                 logging.warning("Failed to validate update system image, ignoring")
         os.remove(system_zip)
@@ -113,7 +113,7 @@ def replace(args, system_zip, system_time, vendor_zip, vendor_time):
             if validate(args, "vendor_ota", f):
                 with zipfile.ZipFile(f, 'r') as zip_ref:
                     zip_ref.extractall(args.images_path)
-                cfg["waydroid"]["vendor_datetime"] = str(vendor_time)
+                cfg["androidbox"]["vendor_datetime"] = str(vendor_time)
             else:
                 logging.warning("Failed to validate update vendor image, ignoring")
         os.remove(vendor_zip)
@@ -127,12 +127,12 @@ def remove_overlay(args):
         shutil.rmtree(tools.config.defaults["overlay_work"])
 
 def make_prop(args, cfg, full_props_path):
-    if not os.path.isfile(args.work + "/waydroid_base.prop"):
-        raise RuntimeError("waydroid_base.prop Not found")
-    with open(args.work + "/waydroid_base.prop") as f:
+    if not os.path.isfile(args.work + "/androidbox_base.prop"):
+        raise RuntimeError("androidbox_base.prop Not found")
+    with open(args.work + "/androidbox_base.prop") as f:
         props = f.read().splitlines()
     if not props:
-        raise RuntimeError("waydroid_base.prop is broken!!?")
+        raise RuntimeError("androidbox_base.prop is broken!!?")
 
     def add_prop(key, cfg_key):
         value = cfg[cfg_key]
@@ -143,7 +143,7 @@ def make_prop(args, cfg, full_props_path):
     add_prop("waydroid.host.user", "user_name")
     add_prop("waydroid.host.uid", "user_id")
     add_prop("waydroid.host.gid", "group_id")
-    add_prop("waydroid.host_data_path", "waydroid_data")
+    add_prop("waydroid.host_data_path", "androidbox_data")
     add_prop("waydroid.background_start", "background_start")
     props.append("waydroid.xdg_runtime_dir=" + tools.config.defaults["container_xdg_runtime_dir"])
     props.append("waydroid.pulse_runtime_path=" + tools.config.defaults["container_pulse_runtime_path"])
@@ -163,7 +163,7 @@ def mount_rootfs(args, images_dir, session):
     cfg = tools.config.load(args)
     helpers.mount.mount(args, images_dir + "/system.img",
                         tools.config.defaults["rootfs"], umount=True)
-    if cfg["waydroid"]["mount_overlays"] == "True":
+    if cfg["androidbox"]["mount_overlays"] == "True":
         try:
             helpers.mount.mount_overlay(args, [tools.config.defaults["overlay"],
                                                tools.config.defaults["rootfs"]],
@@ -171,13 +171,13 @@ def mount_rootfs(args, images_dir, session):
                                     upper_dir=tools.config.defaults["overlay_rw"] + "/system",
                                     work_dir=tools.config.defaults["overlay_work"] + "/system")
         except RuntimeError:
-            cfg["waydroid"]["mount_overlays"] = "False"
+            cfg["androidbox"]["mount_overlays"] = "False"
             tools.config.save(args, cfg)
             logging.warning("Mounting overlays failed. The feature has been disabled.")
 
     helpers.mount.mount(args, images_dir + "/vendor.img",
                            tools.config.defaults["rootfs"] + "/vendor")
-    if cfg["waydroid"]["mount_overlays"] == "True":
+    if cfg["androidbox"]["mount_overlays"] == "True":
         helpers.mount.mount_overlay(args, [tools.config.defaults["overlay"] + "/vendor",
                                            tools.config.defaults["rootfs"] + "/vendor"],
                                     tools.config.defaults["rootfs"] + "/vendor",
@@ -196,8 +196,8 @@ def mount_rootfs(args, images_dir, session):
             helpers.mount.bind(
                 args, "/vendor/odm", tools.config.defaults["rootfs"] + "/odm_extra")
 
-    make_prop(args, session, args.work + "/waydroid.prop")
-    helpers.mount.bind_file(args, args.work + "/waydroid.prop",
+    make_prop(args, session, args.work + "/androidbox.prop")
+    helpers.mount.bind_file(args, args.work + "/androidbox.prop",
                             tools.config.defaults["rootfs"] + "/vendor/waydroid.prop")
 
 def umount_rootfs(args):

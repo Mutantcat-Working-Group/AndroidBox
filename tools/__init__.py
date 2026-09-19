@@ -17,8 +17,8 @@ from .helpers import logging as tools_logging
 def prep_args(args):
     args.cache = {}
     args.work = config.defaults["work"]
-    args.config = args.work + "/waydroid.cfg"
-    args.log = args.work + "/waydroid.log"
+    args.config = args.work + "/androidbox.cfg"
+    args.log = args.work + "/androidbox.log"
     args.sudo_timer = True
     args.timeout = 1800
 
@@ -51,7 +51,7 @@ def main():
 
         if not actions.initializer.is_initialized(args) and \
                 args.action not in ("init", "container", "first-launch", "log", "bugreport"):
-            print('Waydroid is not initialized, run "waydroid init"')
+            print('AndroidBox is not initialized, run "androidbox init"')
             return 0
 
         if args.action == "init":
@@ -70,7 +70,7 @@ def main():
                 actions.session_manager.stop(args)
             else:
                 logging.info(
-                    "Run waydroid {} -h for usage information.".format(args.action))
+                    "Run androidbox {} -h for usage information.".format(args.action))
         elif args.action == "container":
             actionNeedRoot(args.action)
             if args.subaction == "start":
@@ -85,7 +85,7 @@ def main():
                 actions.container_manager.unfreeze(args)
             else:
                 logging.info(
-                    "Run waydroid {} -h for usage information.".format(args.action))
+                    "Run androidbox {} -h for usage information.".format(args.action))
         elif args.action == "app":
             if args.subaction == "install":
                 actions.app_manager.install(args)
@@ -99,7 +99,7 @@ def main():
                 actions.app_manager.list(args)
             else:
                 logging.info(
-                    "Run waydroid {} -h for usage information.".format(args.action))
+                    "Run androidbox {} -h for usage information.".format(args.action))
         elif args.action == "prop":
             if args.subaction == "get":
                 actions.prop.get(args)
@@ -107,7 +107,7 @@ def main():
                 actions.prop.set(args)
             else:
                 logging.info(
-                    "Run waydroid {} -h for usage information.".format(args.action))
+                    "Run androidbox {} -h for usage information.".format(args.action))
         elif args.action == "shell":
             actionNeedRoot(args.action)
             helpers.lxc.shell(args)
@@ -129,7 +129,7 @@ def main():
             elif args.subaction == "disconnect":
                 helpers.net.adb_disconnect(args)
             else:
-                logging.info("Run waydroid {} -h for usage information.".format(args.action))
+                logging.info("Run androidbox {} -h for usage information.".format(args.action))
         elif args.action == "log":
             if args.clear_log:
                 helpers.run.user(args, ["truncate", "-s", "0", args.log])
@@ -141,7 +141,7 @@ def main():
         elif args.action == "bugreport":
             actions.bugreport(args)
         else:
-            logging.info("Run waydroid -h for usage information.")
+            logging.info("Run androidbox -h for usage information.")
 
         #logging.info("Done")
 
@@ -151,14 +151,14 @@ def main():
             logging.getLogger().setLevel(logging.DEBUG)
 
         logging.info("ERROR: " + str(e))
-        logging.info("See also: <https://github.com/waydroid>")
+        logging.info("See also: <https://github.com/Mutantcat-Working-Group/AndroidBox>")
         logging.debug(traceback.format_exc())
 
         if args and args.details_to_stdout:
             return 1
 
         # Hints about the log file (print to stdout only)
-        log_hint = "Run 'waydroid log' for details."
+        log_hint = "Run 'androidbox log' for details."
         if not args or not os.path.exists(args.log) or not args.action == "container":
             log_hint = ("Use '--details-to-stdout' to get more details:\n"
                          f"  {sys.argv[0]} --details-to-stdout {' '.join(sys.argv[1:])}")

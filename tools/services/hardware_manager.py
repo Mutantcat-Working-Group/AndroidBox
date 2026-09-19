@@ -21,7 +21,7 @@ def start(args):
 
     def suspend():
         cfg = tools.config.load(args)
-        if cfg["waydroid"]["suspend_action"] == "stop":
+        if cfg["androidbox"]["suspend_action"] == "stop":
             tools.actions.session_manager.stop(args)
         else:
             tools.actions.container_manager.freeze(args)

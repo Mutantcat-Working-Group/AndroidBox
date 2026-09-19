@@ -9,20 +9,20 @@ except ImportError:
 
 import tools.config
 
-""" This file is about parsing command line arguments passed to waydroid, as
-    well as generating the help pages (waydroid -h). All this is done with
+""" This file is about parsing command line arguments passed to androidbox, as
+    well as generating the help pages (androidbox -h). All this is done with
     Python's argparse. The parsed arguments get extended and finally stored in
     the "args" variable, which is prominently passed to most functions all
-    over the waydroid code base.
+    over the androidbox code base.
 
     See tools/helpers/args.py for more information about the args variable. """
 
 def arguments_init(subparser):
-    ret = subparser.add_parser("init", help="set up waydroid specific"
+    ret = subparser.add_parser("init", help="set up androidbox specific"
                                " configs and install images")
     ret.add_argument("-i", "--images_path",
-                        help="custom path to waydroid images (default in"
-                             " /var/lib/waydroid/images)")
+                        help="custom path to androidbox images (default in"
+                             " /var/lib/androidbox/images)")
     ret.add_argument("-f", "--force", action="store_true",
                      help="re-initialize configs and images")
     ret.add_argument("-c", "--system_channel",
@@ -38,7 +38,7 @@ def arguments_init(subparser):
 
 def arguments_status(subparser):
     ret = subparser.add_parser("status",
-                               help="quick check for the waydroid")
+                               help="quick check for the androidbox")
     return ret
 
 def arguments_upgrade(subparser):
@@ -48,7 +48,7 @@ def arguments_upgrade(subparser):
     return ret
 
 def arguments_log(subparser):
-    ret = subparser.add_parser("log", help="follow the waydroid logfile")
+    ret = subparser.add_parser("log", help="follow the androidbox logfile")
     ret.add_argument("-n", "--lines", default="60",
                      help="count of initial output lines")
     ret.add_argument("-c", "--clear", help="clear the log",
@@ -106,7 +106,7 @@ def arguments_fullUI(subparser):
     return ret
 
 def arguments_firstLaunch(subparser):
-    ret = subparser.add_parser("first-launch", help="start waydroid, prompting to initialize waydroid first if necessary (default)")
+    ret = subparser.add_parser("first-launch", help="start androidbox, prompting to initialize androidbox first if necessary (default)")
     return ret
 
 def arguments_shell(subparser):
@@ -137,7 +137,7 @@ def arguments_bugreport(subparser):
     return ret
 
 def arguments():
-    parser = argparse.ArgumentParser(prog="waydroid")
+    parser = argparse.ArgumentParser(prog="androidbox")
 
     # Other
     parser.add_argument("-V", "--version", action="version",

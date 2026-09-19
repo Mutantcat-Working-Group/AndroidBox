@@ -23,7 +23,7 @@ class DbusContainerManager(dbus.service.Object):
         dbus.service.Object.__init__(self, bus, object_path)
 
     @helpers.logging.log_exceptions
-    @dbus.service.method("id.waydro.ContainerManager", in_signature='a{ss}', out_signature='', sender_keyword="sender", connection_keyword="conn")
+    @dbus.service.method("org.mutantcat.androidbox.ContainerManager", in_signature='a{ss}', out_signature='', sender_keyword="sender", connection_keyword="conn")
     def Start(self, session, sender, conn):
         dbus_info = dbus.Interface(conn.get_object("org.freedesktop.DBus", "/org/freedesktop/DBus/Bus", False), "org.freedesktop.DBus")
         uid = dbus_info.GetConnectionUnixUser(sender)
@@ -35,29 +35,29 @@ class DbusContainerManager(dbus.service.Object):
         do_start(self.args, session)
 
     @helpers.logging.log_exceptions
-    @dbus.service.method("id.waydro.ContainerManager", in_signature='b', out_signature='')
+    @dbus.service.method("org.mutantcat.androidbox.ContainerManager", in_signature='b', out_signature='')
     def Stop(self, quit_session):
         stop(self.args, quit_session)
 
     @helpers.logging.log_exceptions
-    @dbus.service.method("id.waydro.ContainerManager", in_signature='', out_signature='')
+    @dbus.service.method("org.mutantcat.androidbox.ContainerManager", in_signature='', out_signature='')
     def Freeze(self):
         if not actions.initializer.is_initialized(self.args):
-            raise RuntimeError("Waydroid is not initialized")
+            raise RuntimeError("AndroidBox is not initialized")
         freeze(self.args)
 
     @helpers.logging.log_exceptions
-    @dbus.service.method("id.waydro.ContainerManager", in_signature='', out_signature='')
+    @dbus.service.method("org.mutantcat.androidbox.ContainerManager", in_signature='', out_signature='')
     def Unfreeze(self):
         if not actions.initializer.is_initialized(self.args):
-            raise RuntimeError("Waydroid is not initialized")
+            raise RuntimeError("AndroidBox is not initialized")
         unfreeze(self.args)
 
     @helpers.logging.log_exceptions
-    @dbus.service.method("id.waydro.ContainerManager", in_signature='', out_signature='a{ss}')
+    @dbus.service.method("org.mutantcat.androidbox.ContainerManager", in_signature='', out_signature='a{ss}')
     def GetSession(self):
         if not actions.initializer.is_initialized(self.args):
-            raise RuntimeError("Waydroid is not initialized")
+            raise RuntimeError("AndroidBox is not initialized")
         try:
             session = self.args.session
             session["state"] = helpers.lxc.status(self.args)
@@ -119,7 +119,7 @@ def start(args):
     _container_manager = DbusContainerManager(mainloop, dbus.SystemBus(), '/ContainerManager', args)
 
     try:
-        _name = dbus.service.BusName("id.waydro.Container", dbus.SystemBus(), do_not_queue=True)
+        _name = dbus.service.BusName("org.mutantcat.androidbox.Container", dbus.SystemBus(), do_not_queue=True)
     except dbus.exceptions.NameExistsException:
         logging.error("Container service is already running")
         return
@@ -138,7 +138,7 @@ def prepare_drivers_once(args):
 
     # Load binder and ashmem drivers
     cfg = tools.config.load(args)
-    if cfg["waydroid"]["vendor_type"] == "MAINLINE":
+    if cfg["androidbox"]["vendor_type"] == "MAINLINE":
         if helpers.drivers.probeBinderDriver(args) != 0:
             logging.error("Failed to load Binder driver")
         helpers.drivers.probeAshmemDriver(args)
@@ -152,7 +152,7 @@ def prepare_drivers_once(args):
 
 def do_start(args, session):
     if not actions.initializer.is_initialized(args):
-        raise RuntimeError("Waydroid is not initialized")
+        raise RuntimeError("AndroidBox is not initialized")
 
     if "session" in args:
         raise RuntimeError("Already tracking a session")
@@ -163,7 +163,7 @@ def do_start(args, session):
 
     # Networking
     command = [tools.config.tools_src +
-               "/data/scripts/waydroid-net.sh", "start"]
+               "/data/scripts/androidbox-net.sh", "start"]
     tools.helpers.run.user(args, command)
 
     # Sensors
@@ -204,14 +204,14 @@ def do_start(args, session):
     # Create session-specific LXC config file
     helpers.lxc.generate_session_lxc_config(args, session)
     # Backwards compatibility
-    with open(tools.config.defaults["lxc"] + "/waydroid/config") as f:
+    with open(tools.config.defaults["lxc"] + "/androidbox/config") as f:
         if "config_session" not in f.read():
-            helpers.mount.bind(args, session["waydroid_data"],
+            helpers.mount.bind(args, session["androidbox_data"],
                                tools.config.defaults["data"])
 
     # Mount rootfs
     cfg = tools.config.load(args)
-    helpers.images.mount_rootfs(args, cfg["waydroid"]["images_path"], session)
+    helpers.images.mount_rootfs(args, cfg["androidbox"]["images_path"], session)
 
     helpers.protocol.set_aidl_version(args)
 
@@ -222,7 +222,7 @@ def do_start(args, session):
 
 def stop(args, quit_session=True):
     if not actions.initializer.is_initialized(args):
-        raise RuntimeError("Waydroid is not initialized")
+        raise RuntimeError("AndroidBox is not initialized")
 
     logging.info("Stopping container")
 
@@ -236,7 +236,7 @@ def stop(args, quit_session=True):
 
         # Networking
         command = [tools.config.tools_src +
-                   "/data/scripts/waydroid-net.sh", "stop"]
+                   "/data/scripts/androidbox-net.sh", "stop"]
         tools.helpers.run.user(args, command, check=False)
 
         #TODO: remove NFC hacks
@@ -277,7 +277,7 @@ def restart(args):
         helpers.lxc.stop(args)
         helpers.lxc.start(args)
     else:
-        logging.error("WayDroid container is {}".format(status))
+        logging.error("AndroidBox container is {}".format(status))
 
 def freeze(args):
     status = helpers.lxc.status(args)
@@ -286,7 +286,7 @@ def freeze(args):
         while helpers.lxc.status(args) == "RUNNING":
             pass
     else:
-        logging.error("WayDroid container is {}".format(status))
+        logging.error("AndroidBox container is {}".format(status))
 
 def unfreeze(args):
     status = helpers.lxc.status(args)

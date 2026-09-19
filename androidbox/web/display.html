@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AndroidBox</title>
+  <style>
+    html, body, #screen { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #16191b; }
+    #status { position: absolute; inset: 0; display: grid; place-items: center; color: #cdd4d6; font: 14px system-ui; }
+    #status[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="screen"></div>
+  <div id="status">Connecting...</div>
+  <script type="module">
+    import RFB from './novnc/core/rfb.js';
+    const parameters = new URLSearchParams(location.hash.slice(1));
+    const port = Number(parameters.get('port'));
+    const status = document.querySelector('#status');
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid display port');
+    const rfb = new RFB(document.querySelector('#screen'), `ws://127.0.0.1:${port}`, {
+      credentials: {password: parameters.get('password')}
+    });
+    history.replaceState(null, '', location.pathname);
+    rfb.scaleViewport = true;
+    rfb.resizeSession = false;
+    rfb.background = '#16191b';
+    rfb.addEventListener('connect', () => { status.hidden = true; document.title = 'AndroidBox - Connected'; });
+    rfb.addEventListener('disconnect', () => { status.hidden = false; status.textContent = 'Display disconnected'; });
+    rfb.addEventListener('securityfailure', () => { status.hidden = false; status.textContent = 'Display authentication failed'; });
+  </script>
+</body>
+</html>

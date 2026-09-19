@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AndroidBox
+Exec=AndroidBox
+Icon=org.mutantcat.androidbox
+Categories=System;Emulator;
+Terminal=false
+StartupWMClass=AndroidBox

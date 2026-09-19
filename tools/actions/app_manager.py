@@ -20,7 +20,7 @@ def install(args):
         if session["state"] == "FROZEN":
             cm.Unfreeze()
 
-        tmp_dir = tools.config.session_defaults["waydroid_data"] + "/waydroid_tmp"
+        tmp_dir = tools.config.session_defaults["androidbox_data"] + "/waydroid_tmp"
         if not os.path.exists(tmp_dir):
             os.makedirs(tmp_dir)
 
@@ -35,7 +35,7 @@ def install(args):
         if session["state"] == "FROZEN":
             cm.Freeze()
     except (dbus.DBusException, KeyError):
-        logging.error("WayDroid session is stopped")
+        logging.error("AndroidBox session is stopped")
 
 def remove(args):
     try:
@@ -57,7 +57,7 @@ def remove(args):
         if session["state"] == "FROZEN":
             cm.Freeze()
     except dbus.DBusException:
-        logging.error("WayDroid session is stopped")
+        logging.error("AndroidBox session is stopped")
 
 def maybeLaunchLater(args, launchNow):
     try:
@@ -68,7 +68,7 @@ def maybeLaunchLater(args, launchNow):
             logging.error("Failed to unfreeze container. Trying to launch anyways...")
         launchNow()
     except dbus.DBusException:
-        logging.error("Starting waydroid session")
+        logging.error("Starting androidbox session")
         tools.actions.session_manager.start(args, launchNow, background=False)
 
 def launch(args):
@@ -113,7 +113,7 @@ def list(args):
         if session["state"] == "FROZEN":
             cm.Freeze()
     except dbus.DBusException:
-        logging.error("WayDroid session is stopped")
+        logging.error("AndroidBox session is stopped")
 
 def showFullUI(args):
     def justShow():
