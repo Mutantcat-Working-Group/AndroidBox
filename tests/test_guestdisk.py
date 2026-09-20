@@ -3,6 +3,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
 import importlib.util
+import json
 import shutil
 import struct
 import subprocess
@@ -212,7 +213,10 @@ class PrepareFlowTests(unittest.TestCase):
             self.assertEqual(window.config.disk, str(overlay))
             self.assertEqual(window.config.disk_format, "qcow2")
             self.assertFalse(window.prepare_button.isVisible())
-            saved = (Path(directory) / "settings.json").read_text(encoding="utf-8")
-            self.assertIn(str(overlay), saved)
+            # Read the stored settings as data: JSON escapes Windows path separators,
+            # so matching the raw document text would only work on Unix platforms.
+            saved = json.loads((Path(directory) / "settings.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["disk"], str(overlay))
+            self.assertEqual(saved["disk_format"], "qcow2")
             window.close()
         self.assertIsNotNone(application)

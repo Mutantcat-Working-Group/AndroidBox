@@ -25,7 +25,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 \
-            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+            libminizip1
       - name: Validate version tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -82,10 +83,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
+          # libasound2 and libminizip1 gained the t64 suffix in the Ubuntu 24.04 ARM image.
+          shared=(libegl1 libopengl0 libxkbcommon0 libnss3 libxcb-cursor0 libxcb-icccm4
+                 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils)
           if [ "${{ matrix.arch }}" = aarch64 ]; then
-            sudo apt-get install -y qemu-system-aarch64 qemu-efi-aarch64 libegl1 libopengl0 libxkbcommon0 libnss3 libasound2t64 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils
+            sudo apt-get install -y "${shared[@]}" qemu-system-aarch64 qemu-efi-aarch64 libasound2t64 libminizip1t64
           else
-            sudo apt-get install -y qemu-system-x86 libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils
+            sudo apt-get install -y "${shared[@]}" qemu-system-x86 libasound2 libminizip1
           fi
           desktop-file-validate packaging/androidbox-appimage.desktop
           python scripts/fetch_appimagetool.py --arch ${{ matrix.arch }}
