@@ -1,4 +1,4 @@
-# Local Verification
+# Verification History
 
 This document includes historical checks with different test counts and payloads.
 See the final section for the current release-workflow and installer validation.
@@ -308,3 +308,40 @@ open: these are not yet verified one-click Android distributions.
 Automatic defaults do not download or create a guest disk. Users still need a
 compatible bootable disk and must select its architecture if it differs from
 the host. The platform and distribution limitations above still apply.
+
+## Published Release 1.0.20260920 (2026-09-20)
+
+The remote checks below supersede earlier statements that CI and publication
+had not run. Tag `v1.0.20260920` points to commit `aca5dac`.
+
+- [Tag-triggered installer workflow](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871760):
+  validation, all four native build jobs and publication succeeded.
+- Windows Server 2022: NSIS compilation with warnings treated as errors passed.
+  Installation to a path containing spaces, correctly quoted registry uninstall
+  commands, installed application Qt/noVNC and bundled-runtime checks, and
+  silent uninstall passed.
+- macOS 15 ARM64 and Intel: frozen application checks, ad-hoc app/DMG signing
+  and verification, and read-only mounted DMG application checks passed.
+- Ubuntu 22.04 x86_64: frozen application checks, AppImage creation, extraction
+  and extracted AppRun Qt/noVNC and bundled QEMU/ADB checks passed.
+- [Regular CI on the release commit](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871722):
+  portable tests and real QEMU display tests on Windows, macOS and Linux, lint
+  and CodeQL all passed. QEMU tests use blank disks, not Android guest images.
+- [Release v1.0.20260920](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260920)
+  was published at 2026-09-20 01:46:53 UTC, not as a draft or prerelease.
+  It contains the Windows x86_64 NSIS installer, macOS ARM64 and x86_64 DMGs,
+  Linux x86_64 AppImage and SHA256SUMS. The downloaded manifest's four hashes
+  match GitHub's reported SHA256 asset digests.
+
+The previous missing Release was caused by pushing only the branch: installer
+publication requires a matching `v*` version tag. Manual dispatch builds
+artifacts without publishing. Release commands explicitly target this fork
+through `GH_REPO`, not the upstream repository.
+
+These checks validate bundled desktop clients on CI runners. They do not
+certify clean end-user machines, all hardware accelerators or full Android
+compatibility. No bootable Linux/Android guest is included. The Android input,
+SystemUI and shared-storage issues documented above remain open. macOS ad-hoc
+signatures are not notarization; Gatekeeper and Windows SmartScreen warnings
+remain possible, and AppImage may require executable permission or FUSE.
+Complete dependency license/source redistribution still needs review.

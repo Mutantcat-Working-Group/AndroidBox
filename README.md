@@ -20,10 +20,10 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 | 平台 | 架构 | 虚拟化后端 | 安装包格式 | 验证状态 |
 | --- | --- | --- | --- | --- |
-| Windows | x86_64 | QEMU / WHPX、TCG | NSIS `.exe` | 已配置 CI，待原生实测 |
-| macOS | Apple Silicon / ARM64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | 本机应用、DMG、固件启动已验证 |
-| macOS | Intel / x86_64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | 已配置 CI，待原生实测 |
-| Linux | x86_64 | QEMU / KVM、TCG | `.AppImage` | 已配置 CI，待原生实测 |
+| Windows | x86_64 | QEMU / WHPX、TCG | NSIS `.exe` | 原生 CI 安装、应用自检和卸载通过 |
+| macOS | Apple Silicon / ARM64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | CI 签名、挂载自检及本机固件启动通过 |
+| macOS | Intel / x86_64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | 原生 CI 签名、挂载和应用自检通过 |
+| Linux | x86_64 | QEMU / KVM、TCG | `.AppImage` | 原生 CI 提取和应用自检通过 |
 | Linux 原生容器 | 依赖宿主内核与镜像 | LXC / Binder / Wayland | 源码安装 | 保留上游后端，仍需宿主验证 |
 
 本地 macOS ARM64 上已运行准备好的 Ubuntu/Android 客体，并验证 Android 启动器显示、键盘输入、ADB 授权、测试 APK 安装及正常关机。鼠标定位、SystemUI 启动异常和共享存储仍存在问题，不能将该结果视为完整 Android 兼容性认证。
@@ -35,13 +35,13 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 - Linux AppImage 面向 glibc 2.35+ 和桌面会话，可能需要执行权限、FUSE2，或使用 `APPIMAGE_EXTRACT_AND_RUN=1`。
 - 硬件加速需要宿主支持并启用对应虚拟化能力；TCG 性能可能明显低于硬件加速。
 
-详细测试记录见 **[本地验证文档](./docs/verification.md)**。
+详细测试记录见 **[验证文档](./docs/verification.md)**。CI 自检不代表所有干净机器、硬件加速或完整 Android 客体兼容性已通过认证。
 
 ### 三、快速上手
 
 #### 桌面安装包
 
-发布产物入口为 [GitHub Releases](https://github.com/Mutantcat-Working-Group/AndroidBox/releases)。四个平台构建全部通过后，发布流程才会上传完整安装包及 `SHA256SUMS`；目前尚未完成远程发布流程验证。
+当前版本 [v1.0.20260920](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260920) 已发布，包含四份安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871760) 已通过；后续版本同样需要四个平台构建全部通过才会发布。
 
 1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
 2. 按照 [客体镜像文档](./docs/guest-image.md) 准备可启动的 Linux/Android 磁盘。
@@ -196,7 +196,8 @@ Android 镜像侧的 `lineageos.waydroid.*` 接口、属性、完整界面标记
 - [x] 三平台四种目标组合的安装包流程配置，内置 QEMU 和 ADB。
 - [x] 根目录 `logo.png` 生成 PNG、ICO、ICNS 图标，供窗口和安装器使用。
 - [x] macOS ARM64 本机构建、ad-hoc 签名、DMG 校验和固件画面测试。
-- [ ] Windows、Intel macOS、Linux 原生运行及远程 Release 全流程验证。
+- [x] 四种目标组合的原生 CI 打包、自检和标签触发 Release 全流程验证。
+- [ ] 各平台真实硬件加速与完整 Android 客体兼容性验证。
 - [ ] 可分发、干净且可启动的 Linux/Android 客体镜像及自动下载。
 - [ ] Android 鼠标定位、SystemUI 启动异常及共享存储问题修复。
 - [ ] 音频转发、GPU 加速、宿主剪贴板和文件共享。
@@ -220,7 +221,7 @@ QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python script
 ### 七、相关文档与项目
 
 - [客体镜像准备](./docs/guest-image.md)：Linux/Android 磁盘配置与验证。
-- [本地验证记录](./docs/verification.md)：实测结果、平台限制及待解决问题。
+- [验证记录](./docs/verification.md)：本地与 CI 实测结果、平台限制及待解决问题。
 - [Waydroid](https://github.com/waydroid/waydroid)：本项目的上游容器运行时。
 - [QEMU](https://www.qemu.org/)：跨平台虚拟机后端。
 - [问题反馈](https://github.com/Mutantcat-Working-Group/AndroidBox/issues)：AndroidBox 缺陷与功能建议。
