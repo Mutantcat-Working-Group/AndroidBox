@@ -5,7 +5,7 @@ memory defaults, QEMU and ARM firmware. Select a compatible bootable guest disk
 on first Start; the disk selection is saved for subsequent launches.
 
 Artifacts: Windows x64 NSIS installer, macOS Apple Silicon and Intel DMGs,
-Linux x64 AppImage, and SHA256SUMS.
+Linux x64 and ARM64 AppImages, and SHA256SUMS.
 
 The installers bundle the QEMU compatibility layer and Android Platform Tools.
 A prepared bootable Linux/Android guest disk is still a separate prerequisite.
