@@ -424,3 +424,19 @@ selection, the staging layout, the host-library exclusions and both
 This makes the bundled ADB architecture-correct on all five release targets.
 The AppImage still relies on the host for QEMU's own shared libraries, and the
 caveats listed at the end of this document continue to apply.
+
+## macOS Intel Disk Image (2026-09-21)
+
+The `macos-15-intel` build of run 35511627755 reached `Create NSIS or signed
+DMG` and failed there with `hdiutil: create failed - Resource busy`, while the
+identical `macos-15` arm64 step succeeded minutes earlier on another runner.
+Nothing in the application changed between the two jobs, so the failure came
+from the runner state rather than the payload.
+
+`scripts/package_desktop.py` now builds the image through `create_dmg()`, which
+detaches any volume already claiming the `AndroidBox` name before it starts and
+retries the create once after a short settle. The retry runs through the checked
+`run()` helper, so a failure that persists still aborts the build with the
+command output visible instead of being swallowed. `tests/test_dmg_packaging.py`
+covers the mount-table parsing, the detach, both create outcomes and the staging
+layout `package_mac()` hands to the helper.

@@ -8,16 +8,55 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
-from release_metadata import validate_versions, windows_version
-from sign_macos import sign_app
+if __package__:
+    # Imported as scripts.package_desktop, for example by the test suite.
+    from scripts.release_metadata import validate_versions, windows_version
+    from scripts.sign_macos import sign_app
+else:
+    # Executed directly as `python scripts/package_desktop.py`.
+    from release_metadata import validate_versions, windows_version
+    from sign_macos import sign_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
+VOLUME_NAME = "AndroidBox"
 
 
 def run(*command, **kwargs):
     subprocess.run([str(part) for part in command], check=True, **kwargs)
+
+
+def mounted_volumes(name=VOLUME_NAME):
+    """List mounted volumes that already claim the installer's volume name."""
+    completed = subprocess.run(["mount"], capture_output=True, text=True)
+    volumes = []
+    for line in completed.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 3 or not fields[2].startswith("/Volumes/"):
+            continue
+        if Path(fields[2]).name.split(" ")[0] == name:
+            volumes.append(fields[2])
+    return volumes
+
+
+def release_volume(name=VOLUME_NAME):
+    """Detach a volume an earlier run left behind, which hdiutil reports as busy."""
+    for volume in mounted_volumes(name):
+        subprocess.run(["hdiutil", "detach", volume], capture_output=True)
+
+
+def create_dmg(source, target, name=VOLUME_NAME):
+    """Build the disk image, tolerating the transient busy state of a reused runner."""
+    command = ["hdiutil", "create", "-volname", name, "-srcfolder", str(source),
+               "-format", "UDZO", "-ov", str(target)]
+    release_volume(name)
+    if subprocess.run(command, capture_output=True, text=True).returncode == 0:
+        return
+    time.sleep(5)
+    release_volume(name)
+    run(*command)
 
 
 def package_mac(version, arch, output):
@@ -31,8 +70,7 @@ def package_mac(version, arch, output):
         stage = Path(temporary)
         run("ditto", app, stage / app.name)
         (stage / "Applications").symlink_to("/Applications")
-        run("hdiutil", "create", "-volname", "AndroidBox", "-srcfolder", stage,
-            "-format", "UDZO", "-ov", target)
+        create_dmg(stage, target)
     run("codesign", "--force", "--sign", "-", target)
     run("codesign", "--verify", "--verbose=2", target)
     run("hdiutil", "verify", target)
