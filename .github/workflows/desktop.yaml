@@ -32,8 +32,9 @@ jobs:
             python scripts/release_metadata.py
           fi
       - run: python scripts/fetch_novnc.py
-      - run: python -m unittest discover -s tests -v
       - run: python -m pip install '.[dev]'
+      - run: python -m pip install '.[desktop]'
+      - run: python -m unittest discover -s tests -v
       - run: ruff check .
 
   build:
