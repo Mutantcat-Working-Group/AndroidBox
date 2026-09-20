@@ -26,7 +26,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
-            libminizip1
+            libxkbcommon-x11-0 libxcb-shape0 libxcb-xkb1 libminizip1
       - name: Validate version tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -85,7 +85,10 @@ jobs:
           sudo apt-get update
           # libasound2 and libminizip1 gained the t64 suffix in the Ubuntu 24.04 ARM image.
           shared=(libegl1 libopengl0 libxkbcommon0 libnss3 libxcb-cursor0 libxcb-icccm4
-                 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils)
+                libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils)
+          # The xcb platform plugin resolves these at analysis time, so PyInstaller
+          # needs them on PATH to bundle them into the AppImage.
+          shared+=(libxkbcommon-x11-0 libxcb-shape0 libxcb-xkb1)
           if [ "${{ matrix.arch }}" = aarch64 ]; then
             # Google publishes no AArch64 Linux Platform Tools archive, so the
             # ARM build stages the distribution's own ADB plus its shared

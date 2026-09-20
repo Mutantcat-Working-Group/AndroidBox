@@ -422,8 +422,8 @@ selection, the staging layout, the host-library exclusions and both
 `require_runnable()` outcomes.
 
 This makes the bundled ADB architecture-correct on all five release targets.
-The AppImage still relies on the host for QEMU's own shared libraries, and the
-caveats listed at the end of this document continue to apply.
+The AppImage still depends on the host for QEMU's kernel modules and for the
+caveats listed under Not Yet Verified, which continue to apply.
 
 ## macOS Intel Disk Image (2026-09-21)
 
@@ -440,3 +440,44 @@ retries the create once after a short settle. The retry runs through the checked
 command output visible instead of being swallowed. `tests/test_dmg_packaging.py`
 covers the mount-table parsing, the detach, both create outcomes and the staging
 layout `package_mac()` hands to the helper.
+
+## Linux Qt XCB Plugin Libraries (2026-09-21)
+
+The `ubuntu-22.04` job of run 35542708425 finished every step, but its
+PyInstaller analysis reported nine `Library not found` warnings, all of them
+from Qt's xcb stack rather than from the bundled QEMU:
+
+```text
+WARNING: Library not found: could not resolve 'libxkbcommon-x11.so.0',
+  dependency of '.../PySide6/Qt/plugins/platforms/libqxcb.so'.
+WARNING: Library not found: could not resolve 'libxcb-shape.so.0',
+  dependency of '.../PySide6/Qt/plugins/platforms/libqxcb.so'.
+WARNING: Library not found: could not resolve 'libxcb-xkb.so.1',
+  dependency of '.../PySide6/Qt/plugins/platforms/libqxcb.so'.
+```
+
+PyInstaller only bundles a dependency it can resolve on the analysis host, so
+an AppImage built without those three libraries carries an xcb platform plugin
+that cannot load. The result is the exact opposite of "click and it runs": on a
+Linux machine that does not already provide `libxkbcommon-x11-0`,
+`libxcb-shape0` and `libxcb-xkb1`, the frozen application aborts before its
+first window appears.
+
+No QEMU dependency was among the missing entries, which settles a question this
+document previously answered the wrong way. PyInstaller's `Analysis` runs
+`find_binary_dependencies()` over the collected binaries and resolves ELF
+imports recursively through `ldd`, excluding only the loader and libc pieces.
+QEMU's shared libraries are therefore bundled already, and the AppImage does not
+lean on the host for them.
+
+The fix is confined to the Linux prerequisite step of `.github/workflows/desktop.yaml`,
+which now installs `libxkbcommon-x11-0`, `libxcb-shape0` and `libxcb-xkb1` in
+both the x86_64 and the AArch64 branches. Note the Debian package that ships
+`libxcb-xkb.so.1` is named `libxcb-xkb1`, not `libxcb-xkb0`; the library soname
+and the package name diverge, and none of the three took the `t64` suffix that
+`libasound2` and `libminizip1` picked up on Ubuntu 24.04 ARM. All three are
+present under the same name for `amd64` and `arm64` in both jammy and noble.
+
+Run 35542708425 built all five installers successfully, so this gap did not
+block a release; it would have surfaced as a runtime failure on a minimal Linux
+desktop instead.
