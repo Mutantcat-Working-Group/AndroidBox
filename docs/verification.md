@@ -481,3 +481,40 @@ present under the same name for `amd64` and `arm64` in both jammy and noble.
 Run 35542708425 built all five installers successfully, so this gap did not
 block a release; it would have surfaced as a runtime failure on a minimal Linux
 desktop instead.
+
+## Installer Workflow Consolidation (2026-09-21)
+
+The build job in `.github/workflows/desktop.yaml` had reached 24 steps, and most
+of the growth was one step per operating system for the same action: three
+prerequisite installs, two bundled-ADB path exports, three frozen-application
+verifications and two packaging invocations. Each group differed only in the
+path or flag it passed, so the file was describing five targets five times.
+
+Those groups now run under `shell: bash` with a `case` on `runner.os`, or as a
+single unconditional command. The job is 15 steps and does exactly what it did
+before. Bash is present on all three runners, which is what makes the collapse
+possible.
+
+Two details were worth confirming rather than assuming. GitHub sets
+`GITHUB_WORKSPACE` as a Windows path, so bash expands it with backslashes and
+the ADB export ends up as `D:\a\AndroidBox\AndroidBox/build/platform-tools` with
+mixed separators; `pathlib` normalises those when `desktop.spec` resolves the
+directory, and the frozen self-test reports its ADB version, so the value is
+usable as written. And `choco install` under Git Bash honours `set -e`, so a
+failed package still aborts the step instead of being swallowed the way the
+previous `$LASTEXITCODE` guards had to check explicitly.
+
+The build job also no longer repeats the unit tests and the Qt smoke test on all
+five runners. Those are pure Python and platform independent, and the
+per-platform proof a build actually needs is `verify_frozen.py
+--require-runtime`, which already fails when the frozen window does not render
+or when the bundled QEMU and ADB do not report a version. The Windows-only DLL
+inheritance test still runs in `check.yaml`, which covers all three operating
+systems. The AppImage extraction step gained `set -euo pipefail` so a failed
+extract aborts at the extract instead of leaning on the following `test` to
+notice.
+
+Run 35544783411 confirmed the result: `validate` in 39s, then all five build
+jobs green, with `release` skipped as expected for a `workflow_dispatch`. The
+artifact names are unchanged, so the ten-artifact contract in
+`scripts/release_metadata.py` still holds.
