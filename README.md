@@ -14,7 +14,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 - **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 
-**当前版本：`1.0.20260920`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB，但**尚未包含可启动的 Linux/Android 客体磁盘**，首次使用仍需自行准备镜像，不是开箱即用的完整 Android 发行版。
+**当前版本：`1.0.20260921`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB；完整 Android 磁盘体积过大，不放入安装包，但项目内置固定版本 Ubuntu 24.04 示例客体盘准备脚本，下载后校验官方 SHA256 并生成客户端可自动识别的 QCOW2 磁盘，再按 [客体镜像文档](./docs/guest-image.md) 完成 Android 客体配置。
 
 ### 二、平台支持
 
@@ -41,16 +41,16 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 #### 桌面安装包
 
-当前版本 [v1.0.20260920](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260920) 已发布，包含四份安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871760) 已通过；后续版本同样需要四个平台构建全部通过才会发布。
+最近发布的完整版本是 [v1.0.20260920](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260920)，包含四份安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871760) 已通过；当前源码版本为 `1.0.20260921`，推送匹配标签后同样需要四个平台构建全部通过才会发布。
 
 1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
-2. 按照 [客体镜像文档](./docs/guest-image.md) 准备可启动的 Linux/Android 磁盘。
+2. 在源码目录运行 `python scripts/fetch_guest_disk.py` 生成示例客体盘（默认按宿主架构），再按 [客体镜像文档](./docs/guest-image.md) 在虚拟机内完成 Android 客体配置。
 3. 点击启动并选择磁盘，程序自动识别 qcow2/raw 格式并保存选择；与宿主不同架构的客体仍需在设置中选择架构。
 4. 启动虚拟机；安装 APK 前，在 Android 中确认 ADB 授权提示。
 
 日志栏默认收起，可通过工具栏按钮展开。首次启动按宿主架构填写客体架构，CPU 默认取逻辑核心数的一半（1–4 核），内存取总内存的一半并按 GiB 向下取整（1–4 GiB）；无法检测时使用 2 核、2 GiB。已有设置不会被覆盖。
 
-QEMU 和 ARM 固件自动查找，设置中显示检测路径而不把安装位置写死；手动填写的路径优先。首次无配置时，也会查找应用数据目录下 `guests/androidbox-架构.qcow2` 或 `.raw`，其中架构为 `aarch64` 或 `x86_64`。不会扫描任意用户目录，也不会自动下载或生成 Android 磁盘。
+QEMU 和 ARM 固件自动查找，设置中显示检测路径而不把安装位置写死；手动填写的路径优先。首次无配置时，也会查找应用数据目录下 `guests/androidbox-架构.qcow2` 或 `.raw`，其中架构为 `aarch64` 或 `x86_64`。不会扫描任意用户目录；未运行准备脚本时不会自动下载或生成磁盘，运行 `python scripts/fetch_guest_disk.py` 后生成的示例盘会被自动识别。
 
 #### 从源码启动
 
@@ -142,23 +142,23 @@ macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整的 `dist/Android
 
 #### GitHub Actions 发布
 
-[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签。标签必须与源码版本一致，例如 `v1.0.20260920`；手动运行仅生成 CI artifacts，不发布 Release。只推送 `main` 或修改版本字符串不会触发安装包发布。
+[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签。标签必须与源码版本一致，例如 `v1.0.20260921`；手动运行仅生成 CI artifacts，不发布 Release。只推送 `main` 或修改版本字符串不会触发安装包发布。
 
 发布者在版本修改提交并推送后执行：
 
 ```sh
-git tag -a v1.0.20260920 -m "AndroidBox 1.0.20260920"
-git push origin v1.0.20260920
+git tag -a v1.0.20260921 -m "AndroidBox 1.0.20260921"
+git push origin v1.0.20260921
 ```
 
 工作流验证版本后并行构建四份安装包，全部验证通过才创建并发布 Release；失败时不会发布缺少附件的版本。进度可在仓库的 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml) 查看。
 
 | 平台 | 当前版本产物 |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260920-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20260920-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260920-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260920-Linux-x86_64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20260921-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20260921-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20260921-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20260921-Linux-x86_64.AppImage` |
 
 每个原生构建执行单元测试、Qt/noVNC 冒烟测试，以及包内 QEMU/ADB 检查；随后再次检查 Windows 实际安装目录、macOS 只读挂载的 DMG 或 Linux 解包后的 AppImage。Windows 安装测试使用含空格路径，并在结束后卸载。
 
@@ -197,8 +197,9 @@ Android 镜像侧的 `lineageos.waydroid.*` 接口、属性、完整界面标记
 - [x] 根目录 `logo.png` 生成 PNG、ICO、ICNS 图标，供窗口和安装器使用。
 - [x] macOS ARM64 本机构建、ad-hoc 签名、DMG 校验和固件画面测试。
 - [x] 四种目标组合的原生 CI 打包、自检和标签触发 Release 全流程验证。
+- [x] Ubuntu 24.04 示例客体盘下载与校验工具，生成客户端自动识别的 QCOW2 磁盘。
 - [ ] 各平台真实硬件加速与完整 Android 客体兼容性验证。
-- [ ] 可分发、干净且可启动的 Linux/Android 客体镜像及自动下载。
+- [ ] 可直接分发的完整 Android 客体镜像；当前仅提供示例盘与配置流程。
 - [ ] Android 鼠标定位、SystemUI 启动异常及共享存储问题修复。
 - [ ] 音频转发、GPU 加速、宿主剪贴板和文件共享。
 - [ ] 干净机器兼容性、完整依赖许可证及源码再分发审核。

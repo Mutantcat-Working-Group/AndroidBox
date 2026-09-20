@@ -2,16 +2,57 @@
 
 The desktop client needs a **bootable Linux VM disk**. Waydroid `system.img` and
 `vendor.img` are Android filesystem partitions, not bootable QEMU disks.
-This repository does not publish or automatically download a prepared VM image.
-The recipe below has not yet been validated by booting Android on all hosts.
+AndroidBox does not bundle a full Android disk in its installers, but the source
+tree includes a verified example-disk preparation script. It downloads the fixed
+Ubuntu 24.04 minimal cloud image, verifies the official `SHA256SUMS` entry, and
+creates the managed `androidbox-{arch}.qcow2` overlay that the desktop client
+auto-detects. The recipe below has not been validated by booting Android on all
+hosts.
+
+## Example Guest Disks
+
+Run from the checkout; the architecture defaults to the host:
+
+```sh
+python scripts/fetch_guest_disk.py
+```
+
+Pass `--arch x86_64` or `--arch aarch64` to prepare the other architecture,
+`--output-dir` to override the state directory, and `--local-image` to reuse an
+already downloaded cloud image while still verifying its checksum. `--dry-run`
+prints the pinned file and official digest without downloading.
+
+```sh
+# x86_64 host (Windows or Linux)
+python scripts/fetch_guest_disk.py --arch x86_64
+
+# ARM64 host (Apple Silicon macOS)
+python scripts/fetch_guest_disk.py --arch aarch64
+```
+
+The script places these files in the guest directory:
+
+- `ubuntu-24.04-minimal-cloudimg-{amd64,arm64}.img` (verified base image)
+- `androidbox-{arch}.qcow2` (32 GiB QCOW2 overlay by default)
+
+The guest directory is `%LOCALAPPDATA%\org.mutantcat.androidbox\guests` on
+Windows, `~/Library/Application Support/org.mutantcat.androidbox/guests` on
+macOS, and `${XDG_DATA_HOME:-~/.local/share}/org.mutantcat.androidbox/guests` on
+Linux. Both example disks are bootable Linux guests and are recognized by the
+desktop client without manual disk selection.
+
+The overlay depends on its base image; keep both in the same directory and never
+delete the base while the overlay is in use. A downloaded mirror is accepted only
+when its official checksum matches.
 
 ## Build a Dedicated Guest
 
-1. Install a minimal Debian-family Linux system into a writable QCOW2 disk using
-   QEMU or another VM installer. Allocate at least 32 GiB of disk and 4 GiB RAM.
-   The guest requires systemd, virtio block/network/GPU drivers and a kernel with
-   `CONFIG_ANDROID_BINDER_IPC=y/m` and `CONFIG_ANDROID_BINDERFS=y`.
-   On Ubuntu a generic kernel plus its matching extra modules may be needed.
+1. Prepare the example disk with `scripts/fetch_guest_disk.py`, or install a
+   minimal Debian-family Linux system into a writable QCOW2 disk using QEMU or
+   another VM installer. Allocate at least 32 GiB of disk and 4 GiB RAM. The
+   guest requires systemd, virtio block/network/GPU drivers and a kernel with
+   `CONFIG_ANDROID_BINDER_IPC=y/m` and `CONFIG_ANDROID_BINDERFS=y`. On Ubuntu a
+   generic kernel plus its matching extra modules may be needed.
 2. Install `python3-gbinder` from a trusted distribution/Waydroid package source
    if it is not in the distribution's repositories. The provisioning script does
    not add repositories or execute remote installer scripts.
@@ -33,11 +74,13 @@ The recipe below has not yet been validated by booting Android on all hosts.
 ### Ubuntu Minimal Cloud Images
 
 The macOS ARM64 integration run uses Ubuntu 24.04 minimal cloud images with
-NoCloud SSH-key provisioning. Download the matching architecture from
-`https://cloud-images.ubuntu.com/minimal/releases/noble/release/` and verify its
-SHA-256 against that directory's `SHA256SUMS` before booting it. A mirror download
-must match the official checksum too. Keep the base image if using a QCOW2 overlay;
-the overlay alone is not a portable, standalone disk.
+NoCloud SSH-key provisioning. `scripts/fetch_guest_disk.py` downloads the matching
+architecture from
+`https://cloud-images.ubuntu.com/minimal/releases/noble/release/`, verifies its
+SHA-256 against that directory's `SHA256SUMS`, and creates the managed QCOW2
+overlay. A mirror download must match the official checksum too. Keep the base
+image if using a QCOW2 overlay; the overlay alone is not a portable, standalone
+disk.
 
 The tested ARM64 image boots kernel `6.8.0-139-generic`, but does not include its
 Binder module by default. Inside the guest, before running the provisioner:
