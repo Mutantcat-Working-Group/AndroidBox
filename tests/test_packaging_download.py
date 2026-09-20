@@ -14,9 +14,10 @@ class PackagingDownloadTests(unittest.TestCase):
         payload = b"packaging tool fixture"
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "tool.AppImage"
-            with patch.object(fetch_appimagetool, "SHA256", hashlib.sha256(payload).hexdigest()), \
+            expected = hashlib.sha256(payload).hexdigest()
+            with patch.dict(fetch_appimagetool.PINNED_SHA256, {"x86_64": expected}), \
                     patch.object(fetch_appimagetool.urllib.request, "urlopen", return_value=io.BytesIO(payload)):
-                fetch_appimagetool.fetch(target)
+                fetch_appimagetool.fetch(target, arch="x86_64")
             self.assertEqual(target.read_bytes(), payload)
             self.assertFalse(target.with_suffix(".download").exists())
 
@@ -24,11 +25,26 @@ class PackagingDownloadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "tool.AppImage"
             target.write_bytes(b"existing")
-            with patch.object(fetch_appimagetool.urllib.request, "urlopen", return_value=io.BytesIO(b"corrupt")):
+            expected = hashlib.sha256(b"packaging tool fixture").hexdigest()
+            with patch.dict(fetch_appimagetool.PINNED_SHA256, {"x86_64": expected}), \
+                    patch.object(fetch_appimagetool.urllib.request, "urlopen", return_value=io.BytesIO(b"corrupt")):
                 with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
-                    fetch_appimagetool.fetch(target)
+                    fetch_appimagetool.fetch(target, arch="x86_64")
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertFalse(target.with_suffix(".download").exists())
+
+    def test_appimagetool_publishes_per_arch_release_assets(self):
+        self.assertEqual(fetch_appimagetool.asset("x86_64"), "appimagetool-x86_64.AppImage")
+        self.assertEqual(fetch_appimagetool.asset("aarch64"), "appimagetool-aarch64.AppImage")
+        self.assertIn("appimagetool-aarch64.AppImage", fetch_appimagetool.url("aarch64"))
+        self.assertEqual(set(fetch_appimagetool.PINNED_SHA256), {"x86_64", "aarch64"})
+
+    def test_fetch_rejects_unknown_architecture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "tool.AppImage"
+            with self.assertRaisesRegex(ValueError, "Unsupported AppImageTool architecture"):
+                fetch_appimagetool.fetch(target, arch="sparc64")
+            self.assertFalse(target.exists())
 
     def test_platform_tools_are_extracted_and_verified(self):
         payload = self._platform_tools_zip()

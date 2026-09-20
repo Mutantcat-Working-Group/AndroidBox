@@ -136,7 +136,9 @@ class VMConfig:
             return ""
         prefixes = (binary.parent, binary.parent.parent)
         for prefix in prefixes:
-            for relative in ("share/qemu/edk2-aarch64-code.fd", "share/edk2-aarch64-code.fd",
+            for relative in ("share/qemu/edk2-aarch64-code.fd", "share/qemu/QEMU_EFI.fd",
+                             "share/qemu/AAVMF_CODE.fd", "share/edk2-aarch64-code.fd",
+                             "share/AAVMF/AAVMF_CODE.fd", "share/edk2/aarch64/QEMU_EFI.fd",
                              "share/qemu-efi-aarch64/QEMU_EFI.fd"):
                 path = prefix / relative
                 if path.is_file():

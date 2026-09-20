@@ -28,17 +28,17 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 windows_version(value)
 
-    def test_checksums_require_all_four_nonempty_installers(self):
+    def test_checksums_require_all_installers_and_tar_archives(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             names = artifact_names("1.0.20260919")
-            self.assertEqual(len(names), 4)
+            self.assertEqual(len(names), 10)
             with self.assertRaises(ValueError):
                 collect_checksums(root, "1.0.20260919")
             for name in names:
                 (root / name).write_bytes(b"abc")
             text = collect_checksums(root, "1.0.20260919")
-            self.assertEqual(len(text.splitlines()), 4)
+            self.assertEqual(len(text.splitlines()), 10)
             self.assertIn("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", text)
             (root / names[0]).write_bytes(b"")
             with self.assertRaises(ValueError):

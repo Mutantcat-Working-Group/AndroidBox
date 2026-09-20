@@ -38,9 +38,12 @@ def contains_binary(executable):
 def arm_firmware():
     root = runtime_root()
     if root is not None:
-        path = root / "share/qemu/edk2-aarch64-code.fd"
-        if path.is_file():
-            return str(path)
+        # Distros ship the AArch64 UEFI firmware under different basenames; the
+        # payload stage keeps whichever name it collected under share/qemu.
+        for name in ("edk2-aarch64-code.fd", "AAVMF_CODE.fd", "QEMU_EFI.fd"):
+            path = root / "share/qemu" / name
+            if path.is_file():
+                return str(path)
     return ""
 
 

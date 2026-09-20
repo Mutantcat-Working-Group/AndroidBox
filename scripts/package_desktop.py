@@ -21,6 +21,7 @@ def run(*command, **kwargs):
 
 
 def package_mac(version, arch, output):
+    arch = "arm64" if arch in ("aarch64", "arm64") else "x86_64"
     app = ROOT / "dist/AndroidBox.app"
     if not app.is_dir():
         raise ValueError("Build dist/AndroidBox.app first")
@@ -49,10 +50,12 @@ def package_windows(version, output):
     return target
 
 
-def package_linux(version, output, appimagetool):
+def package_linux(version, output, appimagetool, arch):
     if not appimagetool:
         raise ValueError("--appimagetool is required on Linux")
-    target = output / f"AndroidBox-{version}-Linux-x86_64.AppImage"
+    if arch not in ("x86_64", "aarch64"):
+        raise ValueError(f"Unsupported Linux packaging architecture: {arch}")
+    target = output / f"AndroidBox-{version}-Linux-{arch}.AppImage"
     with tempfile.TemporaryDirectory(prefix="androidbox-appdir-") as temporary:
         appdir = Path(temporary) / "AndroidBox.AppDir"
         shutil.copytree(ROOT / "dist/AndroidBox", appdir / "usr/lib/androidbox", symlinks=True)
@@ -61,7 +64,7 @@ def package_linux(version, output, appimagetool):
         shutil.copy2(ROOT / "packaging/androidbox-appimage.desktop", appdir / "org.mutantcat.androidbox.desktop")
         shutil.copy2(ROOT / "data/AppIcon.png", appdir / "org.mutantcat.androidbox.png")
         (appdir / ".DirIcon").symlink_to("org.mutantcat.androidbox.png")
-        environment = dict(os.environ, ARCH="x86_64", APPIMAGE_EXTRACT_AND_RUN="1")
+        environment = dict(os.environ, ARCH=arch, APPIMAGE_EXTRACT_AND_RUN="1")
         run(Path(appimagetool).resolve(), "--no-appstream", appdir, target, env=environment)
     target.chmod(0o755)
     return target
@@ -70,20 +73,24 @@ def package_linux(version, output, appimagetool):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--appimagetool")
+    parser.add_argument("--arch", choices=["x86_64", "aarch64", "arm64"])
     parser.add_argument("--output", type=Path, default=ROOT / "dist/installers")
     args = parser.parse_args()
     version = validate_versions(ROOT)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    arch = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "x86_64", "amd64": "x86_64"}.get(platform.machine().lower())
-    if sys.platform == "darwin" and arch:
-        target = package_mac(version, arch, output)
-    elif arch != "x86_64":
-        raise ValueError("Windows and Linux installers currently require x86_64")
-    elif sys.platform == "win32":
-        target = package_windows(version, output)
+    if args.arch:
+        arch = args.arch
     elif sys.platform.startswith("linux"):
-        target = package_linux(version, output, args.appimagetool)
+        arch = "aarch64" if platform.machine().lower() in ("arm64", "aarch64") else "x86_64"
+    else:
+        arch = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "x86_64", "amd64": "x86_64"}.get(platform.machine().lower())
+    if sys.platform == "darwin" and arch in ("arm64", "x86_64"):
+        target = package_mac(version, arch, output)
+    elif sys.platform == "win32" and arch == "x86_64":
+        target = package_windows(version, output)
+    elif sys.platform.startswith("linux") and arch in ("x86_64", "aarch64"):
+        target = package_linux(version, output, args.appimagetool, arch)
     else:
         raise ValueError("Unsupported packaging host")
     if not target.is_file() or target.stat().st_size == 0:

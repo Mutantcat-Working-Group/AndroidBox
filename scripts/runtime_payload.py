@@ -42,16 +42,34 @@ def collect_qemu(prefix, arch, system=None):
     license_file = _qemu_license(prefix, windows)
     if not executable.is_file() or not data.is_dir():
         raise ValueError("QEMU prefix must contain the qemu-system-ARCH executable and share/qemu data")
-    if arch == "aarch64" and not (data / "edk2-aarch64-code.fd").is_file():
-        raise ValueError("QEMU ARM64 payload is missing its UEFI firmware")
+    extra = []
+    if arch == "aarch64":
+        firmware = _arm_firmware(prefix, data)
+        if firmware is None:
+            raise ValueError("QEMU ARM64 payload is missing its UEFI firmware")
+        # Distros ship the AArch64 UEFI firmware under several names and
+        # locations; stage it into runtime/share/qemu under its own basename so
+        # the client can find it next to the bundled QEMU data.
+        if firmware.parent != data:
+            extra.append((str(firmware), "runtime/share/qemu"))
     binaries = [(str(executable), "runtime/bin")]
     if windows:
         binaries += [(str(path), "runtime/bin") for path in sorted(prefix.glob("*.dll"))]
-    files = [(str(data), "runtime/share/qemu"), (str(license_file), "licenses/qemu")]
+    files = [(str(data), "runtime/share/qemu"), (str(license_file), "licenses/qemu"), *extra]
     for name in ("COPYING.LIB", "LICENSE"):
         if (prefix / name).is_file():
             files.append((str(prefix / name), "licenses/qemu"))
     return binaries, files
+
+
+def _arm_firmware(prefix, data):
+    for candidate in (data / "edk2-aarch64-code.fd",
+                      prefix / "share/AAVMF/AAVMF_CODE.fd",
+                      prefix / "share/edk2/aarch64/QEMU_EFI.fd",
+                      prefix / "share/qemu-efi-aarch64/QEMU_EFI.fd"):
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def collect_adb(directory, system=None):

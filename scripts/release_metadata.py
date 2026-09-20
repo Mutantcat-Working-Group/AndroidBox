@@ -44,10 +44,16 @@ def validate_versions(root, tag=None):
 
 def artifact_names(version):
     windows_version(version)
-    return [f"AndroidBox-{version}-Windows-x86_64-Setup.exe",
-            f"AndroidBox-{version}-macOS-arm64.dmg",
-            f"AndroidBox-{version}-macOS-x86_64.dmg",
-            f"AndroidBox-{version}-Linux-x86_64.AppImage"]
+    names = [f"AndroidBox-{version}-Windows-x86_64-Setup.exe",
+             f"AndroidBox-{version}-macOS-arm64.dmg",
+             f"AndroidBox-{version}-macOS-x86_64.dmg",
+             f"AndroidBox-{version}-Linux-x86_64.AppImage",
+             f"AndroidBox-{version}-Linux-aarch64.AppImage"]
+    names += [f"AndroidBox-{version}-{platform}-{arch}.tar.gz"
+              for platform, arch in (("Windows", "x86_64"), ("macOS", "arm64"),
+                                     ("macOS", "x86_64"), ("Linux", "x86_64"),
+                                     ("Linux", "aarch64"))]
+    return names
 
 
 def collect_checksums(directory, version):

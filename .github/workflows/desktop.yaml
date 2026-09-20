@@ -41,7 +41,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15, macos-15-intel, windows-2022]
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+          - os: windows-2022
+            arch: x86_64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -62,9 +72,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils
+          if [ "${{ matrix.arch }}" = aarch64 ]; then
+            sudo apt-get install -y qemu-system-aarch64 qemu-efi-aarch64 libegl1 libopengl0 libxkbcommon0 libnss3 libasound2t64 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils
+          else
+            sudo apt-get install -y qemu-system-x86 libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils
+          fi
           desktop-file-validate packaging/androidbox-appimage.desktop
-          python scripts/fetch_appimagetool.py
+          python scripts/fetch_appimagetool.py --arch ${{ matrix.arch }}
           echo "ANDROIDBOX_QEMU_PREFIX=/usr" >> "$GITHUB_ENV"
       - name: Install QEMU (macOS)
         if: runner.os == 'macOS'
@@ -102,10 +116,22 @@ jobs:
         run: python scripts/verify_frozen.py dist/AndroidBox/AndroidBox --require-runtime
       - name: Create NSIS or signed DMG
         if: runner.os != 'Linux'
-        run: python scripts/package_desktop.py
+        run: python scripts/package_desktop.py --arch ${{ matrix.arch }}
       - name: Create AppImage
         if: runner.os == 'Linux'
-        run: python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage
+        run: python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage --arch ${{ matrix.arch }}
+      - name: Create portable tar.gz
+        run: |
+          set -euo pipefail
+          version=$(python scripts/release_metadata.py)
+          case "${{ matrix.os }}" in
+            windows-2022) payload=dist/AndroidBox; os_name=Windows; arch=x86_64 ;;
+            macos-15-intel) payload=dist/AndroidBox.app; os_name=macOS; arch=x86_64 ;;
+            macos-15) payload=dist/AndroidBox.app; os_name=macOS; arch=arm64 ;;
+            ubuntu-22.04) payload=dist/AndroidBox; os_name=Linux; arch=x86_64 ;;
+            ubuntu-24.04-arm) payload=dist/AndroidBox; os_name=Linux; arch=aarch64 ;;
+          esac
+          tar -czf "dist/installers/AndroidBox-$version-$os_name-$arch.tar.gz" -C dist "$(basename "$payload")"
       - name: Verify mounted DMG
         if: runner.os == 'macOS'
         run: python scripts/verify_frozen.py --dmg dist/installers/*.dmg --require-runtime
@@ -133,7 +159,7 @@ jobs:
         run: |
           version=$(python scripts/release_metadata.py)
           cd "$RUNNER_TEMP"
-          "$GITHUB_WORKSPACE/dist/installers/AndroidBox-$version-Linux-x86_64.AppImage" --appimage-extract
+          "$GITHUB_WORKSPACE/dist/installers/AndroidBox-$version-Linux-${{ matrix.arch }}.AppImage" --appimage-extract
           test -x squashfs-root/AppRun
           test -x squashfs-root/usr/lib/androidbox/AndroidBox
           python "$GITHUB_WORKSPACE/scripts/verify_frozen.py" "$RUNNER_TEMP/squashfs-root/AppRun" --require-runtime
