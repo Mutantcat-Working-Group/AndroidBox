@@ -9,6 +9,16 @@ creates the managed `androidbox-{arch}.qcow2` overlay that the desktop client
 auto-detects. The recipe below has not been validated by booting Android on all
 hosts.
 
+## One Click From The Desktop Client
+
+On first launch, with no guest disk present, the desktop client shows a
+**Prepare example guest disk** button in the center of the window. Clicking it
+downloads the same verified image for this computer's architecture and writes the
+managed `androidbox-{arch}.qcow2` overlay directly, without a separate `qemu-img`
+install, then saves the disk to the client settings and switches to the running
+view. The button disappears once a guest disk is present. Use the script below
+when you prefer the terminal or need a specific architecture or output directory.
+
 ## Example Guest Disks
 
 Run from the checkout; the architecture defaults to the host:
