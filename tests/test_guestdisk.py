@@ -2,6 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
+import importlib.util
 import shutil
 import struct
 import subprocess
@@ -10,6 +11,9 @@ import unittest
 from unittest.mock import patch
 
 from androidbox import guestdisk
+
+
+QT_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 
 class OverlayWriterTests(unittest.TestCase):
@@ -180,6 +184,7 @@ class PrepareTests(unittest.TestCase):
                     guestdisk.parse_size(bad)
 
 
+@unittest.skipUnless(QT_AVAILABLE, "Install PySide6 to exercise the first-run guest disk flow")
 class PrepareFlowTests(unittest.TestCase):
     def test_first_run_button_prepares_and_stores_the_disk(self):
         from PySide6.QtWidgets import QApplication
