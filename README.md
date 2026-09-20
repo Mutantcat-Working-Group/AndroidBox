@@ -126,7 +126,7 @@ python scripts/verify_frozen.py dist/AndroidBox/AndroidBox.exe --require-runtime
 python scripts/package_desktop.py
 ```
 
-Linux 构建示例，需预先安装 QEMU 和 Qt 系统依赖，具体包列表见 [CI 配置](./.github/workflows/desktop.yaml)：
+Linux 构建示例，需预先安装 QEMU 和 Qt 系统依赖，具体包列表见 [CI 配置](./.github/workflows/desktop.yaml)；ARM64 主机还需 `adb` 和 `patchelf`，因为 Google 不提供 AArch64 Linux 版 Platform Tools：
 
 ```sh
 ANDROIDBOX_QEMU_PREFIX=/usr \
@@ -139,7 +139,7 @@ python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage
 
 macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整的 `dist/AndroidBox` 目录，安装包位于 `dist/installers`。不设置运行时变量也可构建桌面客户端，但该产物不含 QEMU/ADB，无法通过 `--require-runtime` 检查。
 
-内置运行时优先于系统 PATH，设置中显式指定的 QEMU 路径仍优先。macOS 签名仅向 QEMU 授予 Hypervisor 权限，封装应用时保留该权限。Platform Tools 固定为 `37.0.1` 并校验 SHA1、SHA256；Windows QEMU 固定为 Chocolatey `2026.8.11`，其他平台从系统包源获取。依赖许可证和源码再分发的完整性仍需审核。
+内置运行时优先于系统 PATH，设置中显式指定的 QEMU 路径仍优先。macOS 签名仅向 QEMU 授予 Hypervisor 权限，封装应用时保留该权限。Platform Tools 固定为 `37.0.1` 并校验 SHA1、SHA256；Windows QEMU 固定为 Chocolatey `2026.8.11`，其他平台从系统包源获取。Google 不发布 AArch64 Linux 版 Platform Tools，因此 Linux ARM64 构建改为从发行版包安装 `adb` 与 `patchelf`，由 `scripts/fetch_platform_tools.py` 连同其依赖库一并打入包内，并实际执行 `adb version` 验证通过后才打包。依赖许可证和源码再分发的完整性仍需审核。
 
 #### GitHub Actions 发布
 

@@ -87,12 +87,12 @@ jobs:
           shared=(libegl1 libopengl0 libxkbcommon0 libnss3 libxcb-cursor0 libxcb-icccm4
                  libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils)
           if [ "${{ matrix.arch }}" = aarch64 ]; then
+            # Google publishes no AArch64 Linux Platform Tools archive, so the
+            # ARM build stages the distribution's own ADB plus its shared
+            # libraries. Shipping the x86_64 binary would leave an ADB that
+            # end users cannot execute and that shadows their system copy.
             sudo apt-get install -y "${shared[@]}" qemu-system-aarch64 qemu-efi-aarch64 \
-              qemu-user-static binfmt-support libasound2t64 libminizip1t64
-            # The only official Android platform-tools are x86_64 ELF binaries;
-            # register user-space emulation so the bundled adb runs on the
-            # native arm64 runner as well.
-            sudo update-binfmts --enable qemu-x86_64 || true
+              libasound2t64 libminizip1t64 adb patchelf
           else
             sudo apt-get install -y "${shared[@]}" qemu-system-x86 libasound2 libminizip1
           fi

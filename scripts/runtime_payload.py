@@ -83,4 +83,9 @@ def collect_adb(directory, system=None):
     data = [(str(directory / "NOTICE.txt"), "licenses/adb")]
     if (directory / "source.properties").is_file():
         data.append((str(directory / "source.properties"), "licenses/adb"))
+    libraries = directory / "lib"
+    if libraries.is_dir():
+        # A distribution ADB needs its shared libraries beside it, and the
+        # staged binary carries an $ORIGIN/lib runpath so it finds them there.
+        data.append((str(libraries), "runtime/lib"))
     return binaries, data

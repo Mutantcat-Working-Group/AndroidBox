@@ -394,3 +394,33 @@ SystemUI and shared-storage issues documented above remain open. macOS ad-hoc
 signatures are not notarization; Gatekeeper and Windows SmartScreen warnings
 remain possible, and AppImage may require executable permission or FUSE.
 Complete dependency license/source redistribution still needs review.
+
+## AArch64 Linux Bundled ADB (2026-09-20)
+
+`scripts/fetch_platform_tools.py` selected its archive by operating system
+only, so the Linux ARM64 build downloaded `platform-tools_r37.0.1-linux.zip`,
+which is an x86_64 ELF build. The frozen application then failed its runtime
+check with `[Errno 8] Exec format error` on the bundled `adb`, because a
+bundled runtime takes precedence over the system `adb` on `PATH`.
+
+Google publishes Platform Tools for macOS and Windows only; the repository
+manifest at `dl.google.com/android/repository` carries no AArch64 Linux asset,
+so there is nothing to pin for that host. Registering `qemu-user-static` with
+`update-binfmts` was tried instead and also failed: `adb version` exited 255
+under user-mode emulation, and the approach would still have shipped an x86_64
+binary that end users could not execute.
+
+The Linux ARM64 build now installs the distribution's `adb` package plus
+`patchelf`, and `install_distribution()` stages that executable together with
+the shared libraries `ldd` reports, skipping the loader and libc so those still
+come from the host. `set_runpath()` gives the staged binary an `$ORIGIN/lib`
+runpath so it resolves those libraries wherever the AppImage is extracted, and
+`collect_adb()` stages them into `runtime/lib`. `require_runnable()` executes
+`adb version` before the payload replaces the previous one, so a build fails
+instead of shipping an ADB the host cannot run. Unit tests cover the archive
+selection, the staging layout, the host-library exclusions and both
+`require_runnable()` outcomes.
+
+This makes the bundled ADB architecture-correct on all five release targets.
+The AppImage still relies on the host for QEMU's own shared libraries, and the
+caveats listed at the end of this document continue to apply.

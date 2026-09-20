@@ -61,6 +61,24 @@ class RuntimePayloadTests(unittest.TestCase):
                              {"adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"})
             self.assertIn((str(root / "NOTICE.txt"), "licenses/adb"), data)
 
+    def test_adb_collects_distribution_libraries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "lib").mkdir()
+            (root / "lib/android-libbase.so").touch()
+            (root / "adb").touch()
+            (root / "NOTICE.txt").touch()
+            _, data = collect_adb(root, system="Linux")
+            self.assertIn((str(root / "lib"), "runtime/lib"), data)
+
+    def test_adb_without_libraries_stages_no_lib_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "adb").touch()
+            (root / "NOTICE.txt").touch()
+            _, data = collect_adb(root, system="Linux")
+            self.assertEqual(data, [(str(root / "NOTICE.txt"), "licenses/adb")])
+
     def test_adb_requires_notice(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
