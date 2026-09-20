@@ -105,3 +105,30 @@ class RuntimePayloadTests(unittest.TestCase):
             (root / "COPYING").touch()
             with self.assertRaisesRegex(ValueError, "firmware"):
                 collect_qemu(root, "aarch64", system="Darwin")
+
+    def test_arm_payload_stages_qemu_efi_firmware_from_debian_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "bin").mkdir()
+            (root / "bin/qemu-system-aarch64").touch()
+            (root / "share/qemu").mkdir(parents=True)
+            (root / "share/qemu/openbios-common.elf").touch()
+            (root / "share/doc/qemu-system-common").mkdir(parents=True)
+            (root / "share/doc/qemu-system-common/copyright").write_text("license")
+            (root / "share/qemu-efi-aarch64").mkdir(parents=True)
+            (root / "share/qemu-efi-aarch64/QEMU_EFI.fd").touch()
+            _, data = collect_qemu(root, "aarch64", system="Linux")
+            self.assertIn((str(root / "share/qemu-efi-aarch64/QEMU_EFI.fd"), "runtime/share/qemu"), data)
+
+    def test_arm_payload_stages_aavmf_firmware_into_share_qemu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "bin").mkdir()
+            (root / "bin/qemu-system-aarch64").touch()
+            (root / "share/qemu").mkdir(parents=True)
+            (root / "share/AAVMF").mkdir(parents=True)
+            (root / "share/AAVMF/AAVMF_CODE.fd").touch()
+            (root / "COPYING").touch()
+            _, data = collect_qemu(root, "aarch64", system="Linux")
+            self.assertIn((str(root / "share/qemu"), "runtime/share/qemu"), data)
+            self.assertIn((str(root / "share/AAVMF/AAVMF_CODE.fd"), "runtime/share/qemu"), data)

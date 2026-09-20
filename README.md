@@ -24,6 +24,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 | macOS | Apple Silicon / ARM64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | CI 签名、挂载自检及本机固件启动通过 |
 | macOS | Intel / x86_64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | 原生 CI 签名、挂载和应用自检通过 |
 | Linux | x86_64 | QEMU / KVM、TCG | `.AppImage` | 原生 CI 提取和应用自检通过 |
+| Linux | ARM64 / aarch64 | QEMU / TCG（公共 runner 无 KVM） | `.AppImage` | 原生 ARM runner 提取和应用自检（无 KVM，仅 `--version` 校验） |
 | Linux 原生容器 | 依赖宿主内核与镜像 | LXC / Binder / Wayland | 源码安装 | 保留上游后端，仍需宿主验证 |
 
 本地 macOS ARM64 上已运行准备好的 Ubuntu/Android 客体，并验证 Android 启动器显示、键盘输入、ADB 授权、测试 APK 安装及正常关机。鼠标定位、SystemUI 启动异常和共享存储仍存在问题，不能将该结果视为完整 Android 兼容性认证。
@@ -32,7 +33,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 - macOS 的 ad-hoc 签名不是 Developer ID 签名或 Apple 公证，下载后的应用仍可能被 Gatekeeper 阻止；本机 QEMU 面向 macOS 26 构建，不能据此保证旧系统兼容。
 - Windows 安装器尚未使用代码签名证书，可能出现 SmartScreen 提示。
-- Linux AppImage 面向 glibc 2.35+ 和桌面会话，可能需要执行权限、FUSE2，或使用 `APPIMAGE_EXTRACT_AND_RUN=1`。
+- Linux AppImage 面向较新 glibc（x86_64 基于 Ubuntu 22.04 / glibc 2.35 构建，aarch64 基于 Ubuntu 24.04 / glibc 2.39 构建）和桌面会话，可能需要执行权限、FUSE2，或使用 `APPIMAGE_EXTRACT_AND_RUN=1`。
 - 硬件加速需要宿主支持并启用对应虚拟化能力；TCG 性能可能明显低于硬件加速。
 
 详细测试记录见 **[验证文档](./docs/verification.md)**。CI 自检不代表所有干净机器、硬件加速或完整 Android 客体兼容性已通过认证。
@@ -41,7 +42,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 #### 桌面安装包
 
-最近发布的完整版本是 [v1.0.20260920](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260920)，包含四份安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871760) 已通过；当前源码版本为 `1.0.20260921`，推送匹配标签后同样需要四个平台构建全部通过才会发布。
+最近发布的完整版本是 [v1.0.20260920](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260920)，包含四份安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871760) 已通过；当前源码版本为 `1.0.20260921`，推送匹配标签后同样需要五个平台构建全部通过才会发布。
 
 1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
 2. 在源码目录运行 `python scripts/fetch_guest_disk.py` 生成示例客体盘（默认按宿主架构），再按 [客体镜像文档](./docs/guest-image.md) 在虚拟机内完成 Android 客体配置。
@@ -151,7 +152,7 @@ git tag -a v1.0.20260921 -m "AndroidBox 1.0.20260921"
 git push origin v1.0.20260921
 ```
 
-工作流验证版本后并行构建四份安装包，全部验证通过才创建并发布 Release；失败时不会发布缺少附件的版本。进度可在仓库的 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml) 查看。
+工作流验证版本后并行构建五份安装包，全部验证通过才创建并发布 Release；失败时不会发布缺少附件的版本。进度可在仓库的 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml) 查看。
 
 | 平台 | 当前版本产物 |
 | --- | --- |
@@ -159,10 +160,13 @@ git push origin v1.0.20260921
 | macOS ARM64 | `AndroidBox-1.0.20260921-macOS-arm64.dmg` |
 | macOS Intel | `AndroidBox-1.0.20260921-macOS-x86_64.dmg` |
 | Linux x86_64 | `AndroidBox-1.0.20260921-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20260921-Linux-aarch64.AppImage` |
+
+每个平台还随附一份免安装便携包 `AndroidBox-1.0.20260921-<平台>-<架构>.tar.gz`（解压即可运行），与安装包一同校验、上传和发布。
 
 每个原生构建执行单元测试、Qt/noVNC 冒烟测试，以及包内 QEMU/ADB 检查；随后再次检查 Windows 实际安装目录、macOS 只读挂载的 DMG 或 Linux 解包后的 AppImage。Windows 安装测试使用含空格路径，并在结束后卸载。
 
-四个安装包全部成功后，流程生成 `SHA256SUMS`，先上传到草稿 Release，再公开发布。已发布的 Release 不会被重复运行覆盖；只有发布任务获得 `contents: write` 权限，不需要签名密钥。
+五个安装包及随附便携包全部成功后，流程生成 `SHA256SUMS`，先上传到草稿 Release，再公开发布。已发布的 Release 不会被重复运行覆盖；只有发布任务获得 `contents: write` 权限，不需要签名密钥。
 
 后续升级版本时，需同步更新 `pyproject.toml`、两处源码版本声明和 Debian changelog，运行 `python scripts/release_metadata.py --tag v版本号` 校验后再推送标签。
 

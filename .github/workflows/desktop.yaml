@@ -121,6 +121,7 @@ jobs:
         if: runner.os == 'Linux'
         run: python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage --arch ${{ matrix.arch }}
       - name: Create portable tar.gz
+        shell: bash
         run: |
           set -euo pipefail
           version=$(python scripts/release_metadata.py)
