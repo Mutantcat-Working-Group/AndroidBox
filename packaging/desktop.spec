@@ -67,6 +67,7 @@ executable = EXE(
     upx=False,
     console=False,
     version=version_resource,
+    icon=str(root / "packaging/icons/AndroidBox.ico") if sys.platform == "win32" else None,
 )
 distribution = COLLECT(
     executable,
@@ -80,6 +81,7 @@ if sys.platform == "darwin":
     application = BUNDLE(
         distribution,
         name="AndroidBox.app",
+        icon=str(root / "packaging/icons/AndroidBox.icns"),
         bundle_identifier="org.mutantcat.androidbox",
         version=version,
         info_plist={"NSHighResolutionCapable": True,

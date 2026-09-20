@@ -20,6 +20,8 @@ VIAddVersionKey /LANG=1033 "FileDescription" "AndroidBox Installer"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "AndroidBox contributors; GPL-3.0-or-later"
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "${ICON_FILE}"
+!define MUI_UNICON "${ICON_FILE}"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\AndroidBox.exe"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "${LICENSE_FILE}"

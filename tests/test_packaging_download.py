@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts import fetch_appimagetool
+from scripts import fetch_appimagetool, fetch_platform_tools
 
 
 class PackagingDownloadTests(unittest.TestCase):
@@ -28,3 +28,70 @@ class PackagingDownloadTests(unittest.TestCase):
                     fetch_appimagetool.fetch(target)
             self.assertEqual(target.read_bytes(), b"existing")
             self.assertFalse(target.with_suffix(".download").exists())
+
+    def test_platform_tools_are_extracted_and_verified(self):
+        payload = self._platform_tools_zip()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "platform-tools.zip"
+            archive.write_bytes(payload)
+            target = root / "platform-tools"
+            expected = {
+                "name": "fixture.zip",
+                "sha1": hashlib.sha1(payload).hexdigest(),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+            with patch.object(fetch_platform_tools, "ARCHIVES", {"Darwin": expected}), \
+                    patch.object(fetch_platform_tools.platform, "system", return_value="Darwin"):
+                fetch_platform_tools.install(target, archive=archive)
+            self.assertTrue((target / "adb").is_file())
+            self.assertEqual((target / "adb").stat().st_mode & 0o111, 0o111)
+
+    def test_platform_tools_bad_checksum_preserves_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "platform-tools.zip"
+            archive.write_bytes(b"corrupt")
+            target = root / "platform-tools"
+            target.mkdir()
+            (target / "keep").write_text("existing")
+            expected = {"name": "fixture.zip", "sha1": "0" * 40, "sha256": "0" * 64}
+            with patch.object(fetch_platform_tools, "ARCHIVES", {"Darwin": expected}), \
+                    patch.object(fetch_platform_tools.platform, "system", return_value="Darwin"):
+                with self.assertRaisesRegex(ValueError, "SHA1 mismatch"):
+                    fetch_platform_tools.install(target, archive=archive)
+            self.assertEqual((target / "keep").read_text(), "existing")
+
+    def test_platform_tools_missing_notice_preserves_target(self):
+        payload = self._platform_tools_zip(include_notice=False)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "platform-tools.zip"
+            archive.write_bytes(payload)
+            target = root / "platform-tools"
+            target.mkdir()
+            (target / "keep").write_text("existing")
+            expected = {
+                "name": "fixture.zip",
+                "sha1": hashlib.sha1(payload).hexdigest(),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+            with patch.object(fetch_platform_tools, "ARCHIVES", {"Darwin": expected}), \
+                    patch.object(fetch_platform_tools.platform, "system", return_value="Darwin"):
+                with self.assertRaisesRegex(ValueError, "NOTICE.txt"):
+                    fetch_platform_tools.install(target, archive=archive)
+            self.assertEqual((target / "keep").read_text(), "existing")
+
+    def _platform_tools_zip(self, include_notice=True):
+        from zipfile import ZipFile, ZipInfo
+
+        buffer = io.BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            names = ["platform-tools/", "platform-tools/adb"]
+            if include_notice:
+                names.append("platform-tools/NOTICE.txt")
+            for name in names:
+                info = ZipInfo(name)
+                info.external_attr = 0o100755 << 16
+                archive.writestr(info, b"adb" if name.endswith("adb") else b"")
+        return buffer.getvalue()

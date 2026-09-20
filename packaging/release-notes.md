@@ -3,8 +3,8 @@
 Artifacts: Windows x64 NSIS installer, macOS Apple Silicon and Intel DMGs,
 Linux x64 AppImage, and SHA256SUMS.
 
-QEMU, ADB and a prepared guest disk are still separate prerequisites.
-These installers contain the desktop client, not yet a one-click Android runtime.
+The installers bundle the QEMU compatibility layer and Android Platform Tools.
+A prepared bootable Linux/Android guest disk is still a separate prerequisite.
 See docs/verification.md for guest input, storage and platform validation gaps.
 
 macOS applications and DMGs use ad-hoc signatures, not Developer ID or Apple

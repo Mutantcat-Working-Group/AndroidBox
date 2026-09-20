@@ -1,171 +1,76 @@
-<img align="left" src="data/AppIcon.png" width="64">
+<div align="center">
+<img src="./logo.png" width="100" alt="AndroidBox Logo"/>
+<h2>AndroidBox</h2>
+</div>
 
-# AndroidBox
+### 一、功能简述
 
-AndroidBox is a fork of [Waydroid](https://github.com/waydroid/waydroid), with a
-Linux-native Android container runtime and a new cross-platform Qt/QEMU desktop
-client. Application ID: **org.mutantcat.androidbox**.
+AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 **Android 窗口化运行工具**，保留 Linux 原生容器后端，并提供基于 Qt、QEMU 和 noVNC 的跨平台桌面客户端。
 
-## Current Status
+- **窗口化界面**：内嵌 noVNC 显示，支持全屏、运行日志和虚拟机设置。
+- **虚拟机管理**：配置磁盘、架构、内存、CPU 和固件，支持启动、正常关机与强制停止。
+- **QEMU 兼容层**：探测 Linux KVM、macOS HVF、Windows WHPX；跨架构或无硬件加速时可显式选择 TCG。
+- **APK 安装**：通过经过设备授权的 ADB 安装应用，优先使用安装包内置的 ADB。
+- **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
+- **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 
-The desktop client implements VM settings, start/shutdown/force-stop, embedded
-noVNC display, full screen, runtime logs and APK installation through authenticated
-ADB. Linux retains its native container backend. The QEMU backend needs a
-**prepared bootable Linux guest disk**; this repository does not yet ship one.
+**当前版本：`1.0.20260919`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB，但**尚未包含可启动的 Linux/Android 客体磁盘**，首次使用仍需自行准备镜像，不是开箱即用的完整 Android 发行版。
 
-Windows/macOS/Linux support is the target architecture, not a completed
-three-platform certification. Android guest input and application compatibility
-still require further integration testing. Audio
-forwarding, GPU acceleration, host clipboard/file sharing and
-automatic guest-image downloads are not implemented.
+### 二、平台支持
 
-On the local macOS ARM64 host, a prepared Ubuntu/Android guest boots under HVF
-and displays the Android launcher in the embedded window. Keyboard delivery,
-ADB authorization, a test APK install and graceful shutdown were exercised. Mouse targeting and
-SystemUI startup errors remain unresolved; Windows/Linux real-host validation
-is still pending. See [Local Verification](docs/verification.md).
+| 平台 | 架构 | 虚拟化后端 | 安装包格式 | 验证状态 |
+| --- | --- | --- | --- | --- |
+| Windows | x86_64 | QEMU / WHPX、TCG | NSIS `.exe` | 已配置 CI，待原生实测 |
+| macOS | Apple Silicon / ARM64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | 本机应用、DMG、固件启动已验证 |
+| macOS | Intel / x86_64 | QEMU / HVF、TCG | ad-hoc 签名 `.dmg` | 已配置 CI，待原生实测 |
+| Linux | x86_64 | QEMU / KVM、TCG | `.AppImage` | 已配置 CI，待原生实测 |
+| Linux 原生容器 | 依赖宿主内核与镜像 | LXC / Binder / Wayland | 源码安装 | 保留上游后端，仍需宿主验证 |
 
-## Desktop Client
+本地 macOS ARM64 上已运行准备好的 Ubuntu/Android 客体，并验证 Android 启动器显示、键盘输入、ADB 授权、测试 APK 安装及正常关机。鼠标定位、SystemUI 启动异常和共享存储仍存在问题，不能将该结果视为完整 Android 兼容性认证。
 
-Requires Python 3.10+, QEMU with VNC/WebSocket support, and optionally Android SDK
-Platform Tools (`adb`) for APK installation.
+安装与兼容性注意事项：
+
+- macOS 的 ad-hoc 签名不是 Developer ID 签名或 Apple 公证，下载后的应用仍可能被 Gatekeeper 阻止；本机 QEMU 面向 macOS 26 构建，不能据此保证旧系统兼容。
+- Windows 安装器尚未使用代码签名证书，可能出现 SmartScreen 提示。
+- Linux AppImage 面向 glibc 2.35+ 和桌面会话，可能需要执行权限、FUSE2，或使用 `APPIMAGE_EXTRACT_AND_RUN=1`。
+- 硬件加速需要宿主支持并启用对应虚拟化能力；TCG 性能可能明显低于硬件加速。
+
+详细测试记录见 **[本地验证文档](./docs/verification.md)**。
+
+### 三、快速上手
+
+#### 桌面安装包
+
+发布产物入口为 [GitHub Releases](https://github.com/Mutantcat-Working-Group/AndroidBox/releases)。四个平台构建全部通过后，发布流程才会上传完整安装包及 `SHA256SUMS`；目前尚未完成远程发布流程验证。
+
+1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
+2. 按照 [客体镜像文档](./docs/guest-image.md) 准备可启动的 Linux/Android 磁盘。
+3. 在设置中选择磁盘、客体架构、内存、CPU 和加速方式；ARM64 客体需要 UEFI 固件，内置运行时可自动发现随包固件。
+4. 启动虚拟机；安装 APK 前，在 Android 中确认 ADB 授权提示。
+
+#### 从源码启动
+
+需要 Python 3.10+、支持 VNC/WebSocket 的 QEMU；APK 安装还需要 Android SDK Platform Tools 中的 `adb`。
 
 ```sh
 python -m venv .venv
-# Linux/macOS:
+# Linux / macOS
 source .venv/bin/activate
-# Windows PowerShell instead:
-# .venv\Scripts\Activate.ps1
+# Windows PowerShell 使用：.venv\Scripts\Activate.ps1
 python scripts/fetch_novnc.py
 python -m pip install -e '.[desktop]'
 python -m androidbox
 ```
 
-For distributable wheels, fetch noVNC **before** building; the wheel then includes
-those assets and their licenses. The `androidbox-desktop` entry point also starts
-the Qt client. noVNC is pinned and its archive checksum is verified.
+也可使用 `androidbox-desktop` 启动 Qt 客户端。源码运行时通过系统包管理器安装 QEMU，Windows 可安装 QEMU 后在设置中指定可执行文件或加入 PATH。noVNC 下载固定版本并校验归档；构建 wheel 前需先执行 `fetch_novnc.py`，以包含前端资源及许可证。
 
-Install QEMU using your platform's trusted package source (for example Homebrew
-on macOS or your Linux distribution). On Windows configure QEMU's executable in
-Settings or add its directory to PATH. Enable the appropriate host virtualization
-facility. The client probes available accelerators: KVM on Linux, HVF on macOS,
-WHPX on Windows. Cross-architecture or unaccelerated operation requires explicit
-TCG selection; performance can be substantially lower.
+#### Linux 原生容器
 
-In Settings select the prepared Linux disk, guest architecture, resources and
-firmware as needed. ARM64 guests require a suitable UEFI firmware file. See
-[Guest Image Setup](docs/guest-image.md) for provisioning and validation.
-
-## Standalone Desktop Builds
-
-Build on each target OS; PyInstaller does not cross-compile:
-
-```sh
-python scripts/fetch_novnc.py
-python -m pip install '.[desktop,build]'
-python -m PyInstaller packaging/desktop.spec --noconfirm
-# macOS; on Windows/Linux use dist/AndroidBox/AndroidBox[.exe]:
-python scripts/verify_frozen.py dist/AndroidBox.app/Contents/MacOS/AndroidBox
-```
-
-macOS output is `dist/AndroidBox.app`; Windows/Linux output is the complete
-`dist/AndroidBox` directory. Keep all files together. These clients include
-Python, Qt and noVNC, but still require separately installed QEMU, a prepared
-guest disk and optionally ADB. Installer packaging is implemented, but full
-Android operation on each supported host still needs integration testing.
-
-### Experimental Bundled Runtime on macOS
-
-For local integration testing, a native QEMU installation prefix can be included:
-
-```sh
-ANDROIDBOX_QEMU_PREFIX="$(brew --prefix qemu)" \
-ANDROIDBOX_ADB_DIRECTORY="$ANDROID_HOME/platform-tools" \
-python -m PyInstaller packaging/desktop.spec --noconfirm
-python scripts/sign_macos.py dist/AndroidBox.app
-python scripts/verify_frozen.py dist/AndroidBox.app/Contents/MacOS/AndroidBox --require-runtime
-dist/AndroidBox.app/Contents/MacOS/AndroidBox --qemu-test --arch aarch64 --accel hvf
-python scripts/package_desktop.py --output dist/runtime-experiment
-python scripts/verify_frozen.py --dmg dist/runtime-experiment/*.dmg --require-runtime
-```
-
-On Intel Macs use `--arch x86_64`. The bundle collects the host-architecture
-QEMU binary, its linked libraries, firmware/data and QEMU license files. The
-application discovers its bundled binary and ARM firmware automatically; an
-explicit QEMU path in Settings still overrides it. Signing grants Hypervisor
-access to QEMU alone and preserves that entitlement when sealing the app.
-The test boots a disposable blank disk, not Android, and never alters user disks.
-ADB is collected with its notice and version metadata; APK installation prefers
-that bundled executable. `--require-runtime` rejects a bundle missing QEMU,
-firmware/data or ADB and executes both version commands, without starting a guest
-or ADB server. It never substitutes a system executable for a missing payload.
-
-This mode is not enabled in Release CI yet. Dependency license/source
-distribution, supported macOS deployment versions and guest provisioning
-must be completed before treating it as a redistributable Android runtime.
-Windows DLL and Linux prefix collection are implemented and unit-tested, but
-their frozen runtime execution is not yet validated on those hosts.
-
-## Installer Releases
-
-Current version: **1.0.20260919**. The **Build Desktop Installers** workflow runs
-on version tags such as `v1.0.20260919`. After all four native builds succeed,
-it uploads the complete set with `SHA256SUMS` to a draft and then publishes it:
-
-| Platform | Release artifact |
-| --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260919-Windows-x86_64-Setup.exe` (NSIS, per-user) |
-| macOS Apple Silicon | `AndroidBox-1.0.20260919-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260919-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260919-Linux-x86_64.AppImage` |
-
-Tag validation checks `pyproject.toml`, both source version declarations and the
-current Debian changelog entry. Update those together for the next release.
-Manual workflow runs only create downloadable CI artifacts, not a Release.
-Published Releases are never overwritten by a rerun. The built-in `GITHUB_TOKEN`
-gets `contents: write` only in the Release job; no signing secret is required.
-Each build runs the packaged executable outside the checkout and requires a
-passing Qt/noVNC self-test and a rendered screenshot before packaging. Linux
-also repeats that check through the extracted AppImage launcher.
-macOS repeats the check from a verified, read-only mounted DMG. Windows silently
-installs to a path containing spaces, checks that installed application and
-uninstalls it in a cleanup step. These CI steps still need remote execution.
-Every native build runner also runs the unit suite, including a Windows-only
-DLL inheritance test. External Windows QEMU/ADB processes use a cleaned DLL/PATH
-environment, while bundled executables keep their packaged dependencies.
-
-To package an existing native PyInstaller build locally (Python 3.11+):
-
-```sh
-# Linux only, first fetch the pinned packaging tool:
-python scripts/fetch_appimagetool.py
-python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage
-# Windows/macOS:
-python scripts/package_desktop.py
-```
-
-Installers are written to `dist/installers`. Windows needs NSIS on the build host.
-Both the macOS application and DMG receive ad-hoc signatures and are verified;
-this is **not** Developer ID signing or notarization, so Gatekeeper may still
-block a downloaded app. Windows installers are unsigned and may trigger
-SmartScreen. Linux targets glibc 2.35+ and needs a desktop session; AppImage may
-need FUSE2 (or `APPIMAGE_EXTRACT_AND_RUN=1`) and executable permission.
-
-**Not yet click-and-use Android packages:** Python, Qt and noVNC are bundled,
-but QEMU, ADB and a bootable Android-capable Linux guest are not. Do not distribute
-the local test disk or its SSH seed as a production guest image. See
-[Local Verification](docs/verification.md) for the remaining integration gaps.
-
-## Linux-Native Runtime
-
-Native runtime dependencies remain LXC, Binder-capable Linux, Wayland, D-Bus,
-PyGObject, python3-gbinder, polkit, PulseAudio/PipeWire-Pulse, iptables and dnsmasq.
-See `debian/control` and the upstream [Waydroid documentation](https://docs.waydro.id)
-for distribution-specific prerequisites; use the AndroidBox names below.
+原生后端依赖 LXC、支持 Binder 的内核、Wayland、D-Bus、PyGObject、python3-gbinder、polkit、PulseAudio/PipeWire-Pulse、iptables 和 dnsmasq。发行版依赖见 [debian/control](./debian/control) 和 [Waydroid 文档](https://docs.waydro.id)。
 
 ```sh
 sudo make install
-sudo make install_apparmor  # If the host uses AppArmor
+sudo make install_apparmor  # 使用 AppArmor 的宿主执行
 sudo systemctl daemon-reload
 sudo androidbox init
 sudo systemctl enable --now androidbox-container
@@ -173,29 +78,118 @@ androidbox show-full-ui
 androidbox app install example.apk
 ```
 
-`androidbox` is the native Linux CLI; `androidbox-desktop` / `python -m androidbox`
-is the portable Qt client. The client's Linux-native action launches the native
-Android window rather than embedding an existing Wayland surface.
+`androidbox` 是 Linux 原生命令，`androidbox-desktop` / `python -m androidbox` 是跨平台 Qt 客户端。客户端的 Linux 原生入口会启动独立 Android 窗口，不会把已有 Wayland 窗口嵌入 noVNC。
 
-## Naming and Compatibility
+### 四、构建与发布
 
-- Product/desktop ID: AndroidBox / `org.mutantcat.androidbox`.
-- D-Bus and polkit namespace: `org.mutantcat.androidbox.*`.
-- Native command/package/service: `androidbox` / `androidbox-container.service`.
-- Native state: `/var/lib/androidbox`, user state: `~/.local/share/androidbox`.
-- Desktop client settings/logs: platform application-data directory under
-  `org.mutantcat.androidbox` (macOS: `~/Library/Application Support`).
-- Android-side `lineageos.waydroid.*`, properties, full-UI token, temporary APK
-  path, upstream OTA channels and external `waydroid-sensord` retain their names
-  to remain compatible with existing images. They are not host product IDs.
-- Existing Waydroid data is not automatically migrated. Do not run both native
-  runtimes simultaneously: Binder, Android services and bridge subnets may clash.
+#### 本地构建
 
-Upstream copyright notices, license and historical changelog entries are retained.
-The existing application icon is inherited from upstream and has not been redesigned.
-Report AndroidBox issues in the [project repository](https://github.com/Mutantcat-Working-Group/AndroidBox/issues).
+必须在目标系统上原生构建，PyInstaller 不进行跨平台编译。发布脚本建议使用 Python 3.12，至少需要 Python 3.11。
 
-## Development
+```sh
+python scripts/fetch_novnc.py
+python scripts/fetch_platform_tools.py
+python -m pip install '.[desktop,build]'
+```
+
+构建时通过环境变量指定运行时位置：
+
+| 环境变量 | 用途 | CI 配置 |
+| --- | --- | --- |
+| `ANDROIDBOX_QEMU_PREFIX` | QEMU 安装前缀，包含二进制、固件、数据和许可证 | Linux `/usr`；macOS Homebrew；Windows Chocolatey |
+| `ANDROIDBOX_ADB_DIRECTORY` | 包含 ADB 及许可证的 Platform Tools 目录 | `build/platform-tools` |
+
+macOS 示例：
+
+```sh
+ANDROIDBOX_QEMU_PREFIX="$(brew --prefix qemu)" \
+ANDROIDBOX_ADB_DIRECTORY="$PWD/build/platform-tools" \
+python -m PyInstaller packaging/desktop.spec --noconfirm
+python scripts/sign_macos.py dist/AndroidBox.app
+python scripts/verify_frozen.py dist/AndroidBox.app/Contents/MacOS/AndroidBox --require-runtime
+python scripts/package_desktop.py
+python scripts/verify_frozen.py --dmg dist/installers/*.dmg --require-runtime
+```
+
+Windows PowerShell 构建示例，需预先安装 QEMU 和 NSIS：
+
+```powershell
+$env:ANDROIDBOX_QEMU_PREFIX = 'C:\Program Files\qemu'
+$env:ANDROIDBOX_ADB_DIRECTORY = "$PWD\build\platform-tools"
+python -m PyInstaller packaging/desktop.spec --noconfirm
+python scripts/verify_frozen.py dist/AndroidBox/AndroidBox.exe --require-runtime
+python scripts/package_desktop.py
+```
+
+Linux 构建示例，需预先安装 QEMU 和 Qt 系统依赖，具体包列表见 [CI 配置](./.github/workflows/desktop.yaml)：
+
+```sh
+ANDROIDBOX_QEMU_PREFIX=/usr \
+ANDROIDBOX_ADB_DIRECTORY="$PWD/build/platform-tools" \
+python -m PyInstaller packaging/desktop.spec --noconfirm
+python scripts/verify_frozen.py dist/AndroidBox/AndroidBox --require-runtime
+python scripts/fetch_appimagetool.py
+python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage
+```
+
+macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整的 `dist/AndroidBox` 目录，安装包位于 `dist/installers`。不设置运行时变量也可构建桌面客户端，但该产物不含 QEMU/ADB，无法通过 `--require-runtime` 检查。
+
+内置运行时优先于系统 PATH，设置中显式指定的 QEMU 路径仍优先。macOS 签名仅向 QEMU 授予 Hypervisor 权限，封装应用时保留该权限。Platform Tools 固定为 `37.0.1` 并校验 SHA1、SHA256；Windows QEMU 固定为 Chocolatey `2026.8.11`，其他平台从系统包源获取。依赖许可证和源码再分发的完整性仍需审核。
+
+#### GitHub Actions 发布
+
+[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签。标签必须与源码版本一致，例如 `v1.0.20260919`；手动运行仅生成 CI artifacts，不发布 Release。
+
+| 平台 | 当前版本产物 |
+| --- | --- |
+| Windows x86_64 | `AndroidBox-1.0.20260919-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20260919-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20260919-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20260919-Linux-x86_64.AppImage` |
+
+每个原生构建执行单元测试、Qt/noVNC 冒烟测试，以及包内 QEMU/ADB 检查；随后再次检查 Windows 实际安装目录、macOS 只读挂载的 DMG 或 Linux 解包后的 AppImage。Windows 安装测试使用含空格路径，并在结束后卸载。
+
+四个安装包全部成功后，流程生成 `SHA256SUMS`，先上传到草稿 Release，再公开发布。已发布的 Release 不会被重复运行覆盖；只有发布任务获得 `contents: write` 权限，不需要签名密钥。
+
+后续升级版本时，需同步更新 `pyproject.toml`、两处源码版本声明和 Debian changelog，运行 `python scripts/release_metadata.py --tag v版本号` 校验后再推送标签。
+
+### 五、项目结构
+
+```text
+.
+├── androidbox/          # Qt 客户端、QEMU/ADB 管理、noVNC 资源
+├── tools/               # Linux 原生容器后端
+├── guest/               # Linux/Android 客体配置脚本
+├── data/                # 桌面入口、图标与应用元数据
+├── packaging/           # PyInstaller、NSIS、AppImage 配置及原生图标
+├── scripts/             # 下载、打包、签名和验证工具
+├── tests/               # 单元测试
+├── docs/                # 客体准备说明与验证记录
+├── .github/workflows/   # CI 与 Release 流程
+├── logo.png             # 应用图标源文件
+├── pyproject.toml
+└── README.md
+```
+
+产品和桌面 ID 为 `org.mutantcat.androidbox`，D-Bus/polkit 命名空间为 `org.mutantcat.androidbox.*`。Linux 服务为 `androidbox-container.service`，原生状态目录为 `/var/lib/androidbox` 和 `~/.local/share/androidbox`；Qt 客户端的配置及日志位于系统应用数据目录下的 `org.mutantcat.androidbox`，macOS 使用 `~/Library/Application Support`。
+
+Android 镜像侧的 `lineageos.waydroid.*` 接口、属性、完整界面标记、临时 APK 路径、上游 OTA 地址及外部 `waydroid-sensord` 名称保留，以兼容已有镜像。这些不属于宿主产品 ID。现有 Waydroid 数据不会自动迁移，两个原生后端不应同时运行，以免 Binder、服务或网络冲突。
+
+### 六、开发进度
+
+- [x] AndroidBox 品牌与 `org.mutantcat.androidbox` 宿主命名改造。
+- [x] Qt 窗口、虚拟机配置、日志、全屏及内嵌 noVNC。
+- [x] QEMU 启动、正常关机、强制停止及授权 ADB 安装 APK。
+- [x] 三平台四种目标组合的安装包流程配置，内置 QEMU 和 ADB。
+- [x] 根目录 `logo.png` 生成 PNG、ICO、ICNS 图标，供窗口和安装器使用。
+- [x] macOS ARM64 本机构建、ad-hoc 签名、DMG 校验和固件画面测试。
+- [ ] Windows、Intel macOS、Linux 原生运行及远程 Release 全流程验证。
+- [ ] 可分发、干净且可启动的 Linux/Android 客体镜像及自动下载。
+- [ ] Android 鼠标定位、SystemUI 启动异常及共享存储问题修复。
+- [ ] 音频转发、GPU 加速、宿主剪贴板和文件共享。
+- [ ] 干净机器兼容性、完整依赖许可证及源码再分发审核。
+
+开发检查命令：
 
 ```sh
 python -m pip install -e '.[desktop,dev]'
@@ -206,10 +200,15 @@ QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python script
 QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python scripts/smoke_qemu.py
 ```
 
-The smoke test saves a screenshot to the specified `--screenshot` path and exits.
-Unit tests do not require QEMU, a Linux kernel, or an Android guest. They are not
-a replacement for the real guest validation checklist.
-`smoke_qemu.py` requires QEMU and tests its firmware framebuffer using a temporary
-blank disk; it does not download an OS or alter the configured guest disk.
-See [Local Verification](docs/verification.md) for completed checks and outstanding
-integration tests.
+单元测试不需要 Android 客体或实际 QEMU。`smoke_qemu.py` 需要 QEMU，使用临时空白磁盘检查固件画面，不会下载操作系统或修改用户配置的磁盘；ARM64 Mac 可传入 `--arch aarch64 --accel hvf` 及需要的 `--firmware` 路径。测试会保存截图，但固件检查不等于 Android 集成测试。
+
+更新图标时，替换根目录的 1024×1024 `logo.png`，安装 Pillow 后运行 `python scripts/generate_icons.py`，并提交生成的 PNG、ICO 和 ICNS 文件。
+
+### 七、相关文档与项目
+
+- [客体镜像准备](./docs/guest-image.md)：Linux/Android 磁盘配置与验证。
+- [本地验证记录](./docs/verification.md)：实测结果、平台限制及待解决问题。
+- [Waydroid](https://github.com/waydroid/waydroid)：本项目的上游容器运行时。
+- [QEMU](https://www.qemu.org/)：跨平台虚拟机后端。
+- [问题反馈](https://github.com/Mutantcat-Working-Group/AndroidBox/issues)：AndroidBox 缺陷与功能建议。
+- [许可证](./LICENSE)：保留上游版权声明、许可证及历史 changelog；应用图标使用本仓库的 `logo.png`。

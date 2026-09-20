@@ -9,6 +9,22 @@ APP_ID = "org.mutantcat.androidbox"
 
 
 class BrandingTests(unittest.TestCase):
+    def test_native_icon_assets(self):
+        icons = ROOT / "packaging/icons"
+        self.assertEqual((icons / "AndroidBox.ico").read_bytes()[:4], b"\x00\x00\x01\x00")
+        self.assertEqual((icons / "AndroidBox.icns").read_bytes()[:4], b"icns")
+        self.assertEqual((ROOT / "data/AppIcon.png").read_bytes(),
+                         (ROOT / "androidbox/assets/AppIcon.png").read_bytes())
+
+    def test_packagers_use_product_icon(self):
+        spec = (ROOT / "packaging/desktop.spec").read_text()
+        self.assertIn('icon=str(root / "packaging/icons/AndroidBox.ico")', spec)
+        self.assertIn('icon=str(root / "packaging/icons/AndroidBox.icns")', spec)
+        installer = (ROOT / "packaging/windows.nsi").read_text()
+        self.assertIn('!define MUI_ICON "${ICON_FILE}"', installer)
+        self.assertIn('!define MUI_UNICON "${ICON_FILE}"', installer)
+        self.assertIn('/DICON_FILE=', (ROOT / "scripts/package_desktop.py").read_text())
+
     def test_desktop_identity(self):
         path = ROOT / "data" / f"{APP_ID}.desktop"
         self.assertTrue(path.exists())

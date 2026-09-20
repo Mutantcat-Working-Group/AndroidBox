@@ -1,5 +1,8 @@
 # Local Verification
 
+This document includes historical checks with different test counts and payloads.
+See the final section for the current release-workflow and installer validation.
+
 Date: 2026-09-19. Host: macOS ARM64. Python: 3.12.10. PySide6: 6.11.2.
 QEMU: Homebrew 11.1.1. PyInstaller: 6.22.3.
 
@@ -106,8 +109,8 @@ Native Linux desktop runtime, KVM and WHPX need real-host validation. Running
 the Linux container backend inside a VM is not native Linux host certification.
 Frozen Windows/Linux builds, frozen noVNC/QEMU integration, Windows DLL search
 behavior, and distribution signing/notarization still need validation.
-The wheel is a Python package. Installer generation is described below;
-QEMU and a guest disk remain separate prerequisites.
+The wheel is a Python package and needs a separately installed runtime. Desktop
+installers now bundle QEMU and ADB; a bootable guest disk remains separate.
 See [Guest Image](guest-image.md).
 
 ## Release Packaging (1.0.20260919)
@@ -147,8 +150,9 @@ On the local macOS ARM64 host:
 Windows/Intel macOS/Linux installers and tag-to-Release publishing have not
 been executed remotely. The workflow stages all four verified filenames and
 SHA256SUMS before publishing, and refuses to overwrite an already-published
-Release. These are desktop client installers, not complete Android distributions:
-QEMU, ADB, guest firmware and a clean provisioned guest still need distribution.
+Release. These initial desktop client installers were not complete Android
+distributions. Later runtime bundling is documented below; a clean provisioned
+guest still needs distribution.
 
 ## Bundled QEMU Experiment
 
@@ -177,9 +181,10 @@ The macOS ARM64 application was rebuilt using
 This verifies a bundled firmware boot on this macOS host, not a bundled Android
 guest or deployment on a clean/older machine. Homebrew's local QEMU was built
 for macOS 26; CI deployment targets and complete dependency license/source
-distribution need review before enabling this payload in published Releases.
-The existing `dist/installers` client DMG remains separate from the experiment
-in `dist/runtime-experiment`. A production guest is not bundled.
+distribution need review before publishing Releases. At this stage the
+`dist/installers` client DMG remained separate from the experiment in
+`dist/runtime-experiment`; the current installer has since been rebuilt with
+the runtime payload. A production guest is not bundled.
 
 ## Bundled ADB and Installer Checks
 
@@ -209,9 +214,10 @@ DLLs. These Windows payload rules are fixture-tested, not native execution tests
 
 Linux bundled executables retain PyInstaller's private library search path;
 external executables restore the original path. Windows inherited DLL search
-handling is implemented below but still requires native validation. Runtime bundling is still opt-in and not enabled in the
-Release workflow: complete dependency licensing/source distribution, deployment
-targets, native Windows/Linux validation and a clean production guest are pending.
+handling is implemented below but still requires native validation. Runtime
+bundling was opt-in at this stage. The current Release workflow enables it, but
+complete dependency licensing/source distribution, deployment targets, native
+Windows/Linux validation and a clean production guest are still pending.
 
 ## Subprocess Portability
 
@@ -236,3 +242,45 @@ The macOS application was rebuilt and ad-hoc signed after the subprocess changes
 its frozen Qt/noVNC and required bundled QEMU/ADB verification passed from `/tmp`
 with restricted PATH in 1.75 seconds. The experimental DMG from the preceding
 section predates this subprocess change and was not regenerated in this check.
+
+## Current Bundled Release Validation (2026-09-20)
+
+The four-runner Release workflow now bundles native QEMU and Android Platform
+Tools. Windows uses Chocolatey QEMU 2026.8.11, macOS uses Homebrew QEMU, and Linux
+uses Ubuntu's qemu-system-x86 package. Platform Tools 37.0.1 archives are pinned
+per OS and checked against both SHA1 and SHA256 before replacing the target.
+Missing ADB license notices reject the archive without replacing an existing
+installation. Windows QEMU data layouts and Debian license paths are covered
+by fixture tests.
+
+The workflow requires bundled-runtime checks on the frozen executable and again
+on the installed NSIS payload, mounted DMG or extracted AppImage. NSIS's `/D=`
+and `_?=` arguments are last and unquoted, as its command-line parser requires,
+including for paths containing spaces. All four installers and `SHA256SUMS`
+must be present before the draft Release is published. A pushed version tag
+must match the code version; manual runs only upload CI artifacts.
+
+Fresh local results on macOS ARM64:
+
+- Unit suite: 78 tests, 77 passed and one Windows-native test skipped.
+- Ruff, actionlint 1.7.12, `v1.0.20260919` metadata validation and diff whitespace
+  checks passed.
+- PyInstaller rebuilt `dist/AndroidBox.app` with QEMU 11.1.1 and ADB 37.0.1.
+  Required-runtime and Qt/noVNC checks passed outside the checkout with restricted
+  PATH, reporting bundle-local executables rather than system fallbacks.
+- The signed frozen app passed the aarch64/HVF blank-disk test: authenticated
+  noVNC, nonuniform framebuffer, QMP running state, key submission and QMP quit.
+  The screenshot showed TianoCore. This is a firmware test, not an Android boot.
+- `dist/installers/AndroidBox-1.0.20260919-macOS-arm64.dmg` was regenerated from
+  this app. Ad-hoc signatures, app deep/strict verification and `hdiutil verify`
+  passed. Its read-only mounted app passed the Qt/noVNC and required QEMU/ADB
+  checks in 1.76 seconds; the volume was detached successfully.
+
+Windows, Intel macOS and Linux installers, and GitHub tag-to-Release publication,
+have not been executed remotely in this task. Ad-hoc signing is not notarization;
+Gatekeeper can still block downloads, Windows may show SmartScreen warnings, and
+AppImage use can require executable permission or FUSE setup. The local Homebrew
+QEMU targets macOS 26, so this build does not establish older-macOS compatibility.
+Complete dependency license/source redistribution still needs review. A clean
+bootable guest is not bundled, and the Android integration issues above remain
+open: these are not yet verified one-click Android distributions.

@@ -48,16 +48,38 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install NSIS
+      - name: Install NSIS and QEMU (Windows)
         if: runner.os == 'Windows'
-        run: choco install nsis --no-progress -y
-      - name: Install Linux packaging and Qt prerequisites
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
+          choco install qemu --version=2026.8.11 --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'QEMU installation failed' }
+          "ANDROIDBOX_QEMU_PREFIX=C:\Program Files\qemu" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install Linux packaging, Qt and QEMU prerequisites
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils
+          sudo apt-get install -y qemu-system-x86 libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils
           desktop-file-validate packaging/androidbox-appimage.desktop
           python scripts/fetch_appimagetool.py
+          echo "ANDROIDBOX_QEMU_PREFIX=/usr" >> "$GITHUB_ENV"
+      - name: Install QEMU (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install qemu
+          echo "ANDROIDBOX_QEMU_PREFIX=$(brew --prefix qemu)" >> "$GITHUB_ENV"
+      - name: Fetch Android Platform Tools
+        run: python scripts/fetch_platform_tools.py
+      - name: Select bundled ADB path (Unix)
+        if: runner.os != 'Windows'
+        run: echo "ANDROIDBOX_ADB_DIRECTORY=$GITHUB_WORKSPACE/build/platform-tools" >> "$GITHUB_ENV"
+      - name: Select bundled ADB path (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "ANDROIDBOX_ADB_DIRECTORY=$env:GITHUB_WORKSPACE\build\platform-tools" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: python scripts/fetch_novnc.py
       - run: python -m pip install '.[desktop,build]'
       - name: Native host unit tests
@@ -70,13 +92,13 @@ jobs:
       - run: python -m PyInstaller packaging/desktop.spec --noconfirm
       - name: Verify frozen macOS application
         if: runner.os == 'macOS'
-        run: python scripts/verify_frozen.py dist/AndroidBox.app/Contents/MacOS/AndroidBox
+        run: python scripts/verify_frozen.py dist/AndroidBox.app/Contents/MacOS/AndroidBox --require-runtime
       - name: Verify frozen Windows application
         if: runner.os == 'Windows'
-        run: python scripts/verify_frozen.py dist/AndroidBox/AndroidBox.exe
+        run: python scripts/verify_frozen.py dist/AndroidBox/AndroidBox.exe --require-runtime
       - name: Verify frozen Linux application
         if: runner.os == 'Linux'
-        run: python scripts/verify_frozen.py dist/AndroidBox/AndroidBox
+        run: python scripts/verify_frozen.py dist/AndroidBox/AndroidBox --require-runtime
       - name: Create NSIS or signed DMG
         if: runner.os != 'Linux'
         run: python scripts/package_desktop.py
@@ -85,20 +107,21 @@ jobs:
         run: python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage
       - name: Verify mounted DMG
         if: runner.os == 'macOS'
-        run: python scripts/verify_frozen.py --dmg dist/installers/*.dmg
+        run: python scripts/verify_frozen.py --dmg dist/installers/*.dmg --require-runtime
       - name: Verify installed Windows application
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $installer = (Get-ChildItem dist/installers/*-Setup.exe).FullName
           $install = Join-Path $env:RUNNER_TEMP 'AndroidBox Install Test'
-          $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$install") -Wait -PassThru
+          # NSIS consumes the rest of the command line; /D= and _?= must be last and unquoted.
+          $process = Start-Process -FilePath $installer -ArgumentList "/S /D=$install" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "NSIS install failed: $($process.ExitCode)" }
           try {
-            python scripts/verify_frozen.py "$install/AndroidBox.exe"
+            python scripts/verify_frozen.py "$install/AndroidBox.exe" --require-runtime
             if ($LASTEXITCODE -ne 0) { throw 'Installed application verification failed' }
           } finally {
-            $process = Start-Process -FilePath "$install/Uninstall.exe" -ArgumentList @('/S', "_?=$install") -Wait -PassThru
+            $process = Start-Process -FilePath "$install/Uninstall.exe" -ArgumentList "/S _?=$install" -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "NSIS uninstall failed: $($process.ExitCode)" }
           }
       - name: Verify AppImage extraction
@@ -109,7 +132,7 @@ jobs:
           "$GITHUB_WORKSPACE/dist/installers/AndroidBox-$version-Linux-x86_64.AppImage" --appimage-extract
           test -x squashfs-root/AppRun
           test -x squashfs-root/usr/lib/androidbox/AndroidBox
-          python "$GITHUB_WORKSPACE/scripts/verify_frozen.py" "$RUNNER_TEMP/squashfs-root/AppRun"
+          python "$GITHUB_WORKSPACE/scripts/verify_frozen.py" "$RUNNER_TEMP/squashfs-root/AppRun" --require-runtime
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.os }}

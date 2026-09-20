@@ -44,7 +44,8 @@ def package_windows(version, output):
     run(compiler, f"/DVERSION={version}",
         f"/DNUMERIC_VERSION={'.'.join(map(str, windows_version(version)))}",
         f"/DPAYLOAD={ROOT / 'dist/AndroidBox'}", f"/DOUTPUT={target}",
-        f"/DLICENSE_FILE={ROOT / 'LICENSE'}", ROOT / "packaging/windows.nsi")
+        f"/DLICENSE_FILE={ROOT / 'LICENSE'}",
+        f"/DICON_FILE={ROOT / 'packaging/icons/AndroidBox.ico'}", ROOT / "packaging/windows.nsi")
     return target
 
 
