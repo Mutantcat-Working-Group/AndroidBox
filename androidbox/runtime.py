@@ -1,6 +1,7 @@
 """Portable QEMU configuration and lifecycle, independent of Qt and Linux tools."""
 
 from dataclasses import asdict, dataclass, fields
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,57 @@ def state_directory():
     return base / "org.mutantcat.androidbox"
 
 
+def host_memory_mb():
+    try:
+        if sys.platform == "win32":
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_uint32), ("load", ctypes.c_uint32)] + [
+                    (name, ctypes.c_uint64) for name in
+                    ("physical", "available", "pagefile", "available_pagefile", "virtual", "available_virtual", "extended")]
+            status = MemoryStatus()
+            status.length = ctypes.sizeof(status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return status.physical // (1024 * 1024)
+        elif sys.platform == "darwin":
+            size = ctypes.c_uint64()
+            length = ctypes.c_size_t(ctypes.sizeof(size))
+            libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+            if libc.sysctlbyname(b"hw.memsize", ctypes.byref(size), ctypes.byref(length), None, 0) == 0:
+                return size.value // (1024 * 1024)
+        else:
+            return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // (1024 * 1024)
+    except (AttributeError, OSError, ValueError):
+        pass
+    return None
+
+
+def disk_format(path):
+    with Path(path).open("rb") as stream:
+        return "qcow2" if stream.read(4) == b"QFI\xfb" else "raw"
+
+
+def default_config(discover_disk=True):
+    memory = host_memory_mb() or 4096
+    config = VMConfig(arch=normalize_arch(platform.machine()),
+                      cpus=max(1, min(4, (os.cpu_count() or 4) // 2)),
+                      memory_mb=max(1024, min(4096, (memory // 2 // 1024) * 1024)))
+    if not discover_disk:
+        return config
+    # Only use explicitly named managed guest disks, never arbitrary user images.
+    for extension in ("qcow2", "raw"):
+        path = state_directory() / "guests" / f"androidbox-{config.arch}.{extension}"
+        try:
+            if not path.is_file():
+                continue
+            detected_format = disk_format(path)
+        except OSError:
+            continue
+        config.disk = str(path)
+        config.disk_format = detected_format
+        break
+    return config
+
+
 @dataclass
 class VMConfig:
     disk: str = ""
@@ -47,8 +99,23 @@ class VMConfig:
     def resolved_firmware(self):
         if self.firmware:
             return self.firmware
-        if not self.qemu and normalize_arch(self.arch) == "aarch64":
-            return bundled.arm_firmware()
+        if normalize_arch(self.arch) != "aarch64":
+            return ""
+        if not self.qemu or bundled.contains_binary(self.qemu):
+            firmware = bundled.arm_firmware()
+            if firmware:
+                return firmware
+        try:
+            binary = Path(self.qemu or executable(self))
+        except ValueError:
+            return ""
+        prefixes = (binary.parent, binary.parent.parent)
+        for prefix in prefixes:
+            for relative in ("share/qemu/edk2-aarch64-code.fd", "share/edk2-aarch64-code.fd",
+                             "share/qemu-efi-aarch64/QEMU_EFI.fd"):
+                path = prefix / relative
+                if path.is_file():
+                    return str(path)
         return ""
 
     def validate(self, check_files=True):
@@ -76,13 +143,15 @@ class VMConfig:
 def load_config(path=None):
     path = path or state_directory() / "settings.json"
     if not path.exists():
-        return VMConfig(arch=normalize_arch(platform.machine()))
+        return default_config()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError("Expected a JSON object")
         names = {field.name for field in fields(VMConfig)}
-        config = VMConfig(**{key: value for key, value in data.items() if key in names})
+        defaults = asdict(default_config(discover_disk=False))
+        defaults.update({key: value for key, value in data.items() if key in names})
+        config = VMConfig(**defaults)
         config.validate(check_files=False)
         return config
     except (TypeError, AttributeError, json.JSONDecodeError) as error:

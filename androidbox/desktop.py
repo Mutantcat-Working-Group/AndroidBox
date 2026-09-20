@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import os
 from pathlib import Path
-import platform
 import shutil
 import subprocess
 import sys
@@ -23,7 +22,7 @@ from . import APP_ID, APP_NAME
 from .adb import install_apk, executable as adb_executable
 from .display import DisplayServer
 from .process import external_environment
-from .runtime import VMConfig, VirtualMachine, load_config, normalize_arch, probe, save_config, state_directory
+from .runtime import VMConfig, VirtualMachine, default_config, disk_format, executable, load_config, probe, save_config, state_directory
 
 
 class SettingsDialog(QDialog):
@@ -57,10 +56,25 @@ class SettingsDialog(QDialog):
         self.cpus.setRange(1, 128)
         self.cpus.setValue(config.cpus)
         form.addRow("CPU cores", self.cpus)
+        self.arch.currentTextChanged.connect(self.update_detected_paths)
+        self.binary.textChanged.connect(self.update_detected_paths)
+        self.update_detected_paths()
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
+
+    def update_detected_paths(self):
+        config = VMConfig(arch=self.arch.currentText(), qemu=self.binary.text().strip())
+        try:
+            binary = executable(config)
+        except ValueError:
+            binary = "Not found"
+        self.binary.setPlaceholderText(f"Automatic: {binary}")
+        self.binary.setToolTip(f"Automatic: {binary}")
+        firmware = config.resolved_firmware()
+        self.firmware.setPlaceholderText(f"Automatic: {firmware or ('Not found' if config.arch == 'aarch64' else 'Not required')}")
+        self.firmware.setToolTip(self.firmware.placeholderText())
 
     def path_row(self, form, name, value):
         field = QLineEdit(value)
@@ -72,6 +86,11 @@ class SettingsDialog(QDialog):
             path, _ = QFileDialog.getOpenFileName(self, name, field.text())
             if path:
                 field.setText(path)
+                if name == "Linux guest disk":
+                    try:
+                        self.format.setCurrentText(disk_format(path))
+                    except OSError as error:
+                        QMessageBox.warning(self, APP_NAME, str(error))
         button.clicked.connect(browse)
         row = QHBoxLayout()
         row.addWidget(field)
@@ -109,7 +128,7 @@ class MainWindow(QMainWindow):
         try:
             self.config = load_config()
         except (ValueError, OSError) as error:
-            self.config = VMConfig(arch=normalize_arch(platform.machine()))
+            self.config = default_config(discover_disk=False)
             self.log.appendPlainText(str(error))
         toolbar = QToolBar("Runtime")
         toolbar.setMovable(False)
@@ -123,7 +142,9 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         self.settings_action = self.action(toolbar, "Settings", QStyle.SP_FileDialogDetailedView, self.settings)
         self.action(toolbar, "Full screen", QStyle.SP_TitleBarMaxButton, self.toggle_fullscreen)
-        self.action(toolbar, "Logs", QStyle.SP_FileDialogInfoView, lambda: self.log.setVisible(not self.log.isVisible()))
+        self.logs_action = self.action(toolbar, "Logs", QStyle.SP_FileDialogInfoView,
+                                       lambda: self.log.setVisible(self.logs_action.isChecked()))
+        self.logs_action.setCheckable(True)
         if sys.platform.startswith("linux"):
             self.native_action = self.action(toolbar, "Linux native", QStyle.SP_ComputerIcon, self.native)
         self.stack = QStackedWidget()
@@ -152,6 +173,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.log)
         splitter.setSizes([600, 140])
         self.setCentralWidget(splitter)
+        self.log.hide()
         self.statusBar().showMessage("Stopped")
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
@@ -193,8 +215,17 @@ class MainWindow(QMainWindow):
 
     def start_vm(self):
         if not self.config.disk:
-            self.settings()
-            if not self.config.disk:
+            path, _ = QFileDialog.getOpenFileName(self, "Select bootable Linux/Android guest disk",
+                                                str(state_directory() / "guests"),
+                                                "Guest disks (*.qcow2 *.raw *.img);;All files (*)")
+            if not path:
+                return
+            try:
+                config = replace(self.config, disk=path, disk_format=disk_format(path))
+                save_config(config)
+                self.config = config
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(self, APP_NAME, str(error))
                 return
         try:
             self.config.validate()
@@ -209,8 +240,6 @@ class MainWindow(QMainWindow):
         config = replace(self.config)
         def start():
             binary, accelerator = probe(config)
-            if accelerator == "tcg" and config.accelerator == "auto":
-                raise ValueError("Hardware acceleration unavailable. Select TCG explicitly in Settings to use slower software emulation.")
             self.vm.start(config, binary, accelerator, self.log_path)
             try:
                 for _ in range(60):

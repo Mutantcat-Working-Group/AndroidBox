@@ -284,3 +284,27 @@ QEMU targets macOS 26, so this build does not establish older-macOS compatibilit
 Complete dependency license/source redistribution still needs review. A clean
 bootable guest is not bundled, and the Android integration issues above remain
 open: these are not yet verified one-click Android distributions.
+
+## First-Launch Defaults (2026-09-20)
+
+- Unit suite: 88 tests, 87 passed and one Windows-native test skipped on macOS.
+  Covers host-based CPU/RAM defaults and bounds, preservation of saved settings,
+  partial configuration, managed-disk discovery, unreadable managed disks,
+  disk-header format detection and external ARM firmware discovery.
+- Ruff and diff whitespace checks passed.
+- Source Qt/noVNC smoke passed, including initially hidden logs, toolbar toggling,
+  first-start disk selection and persistence. The disk picker and VM submission
+  are mocked in this UI test; it does not start a guest.
+- A separate real x86_64 QEMU run on the ARM64 host with automatic acceleration
+  selected TCG and passed authenticated noVNC framebuffer and QMP checks. The
+  screenshot shows firmware with the log panel hidden. This blank-disk test
+  does not establish Android bootability or hardware-accelerator failure recovery.
+- Rebuilt the bundled macOS ARM64 app and ad-hoc-signed installer at
+  `dist/installers/AndroidBox-1.0.20260919-macOS-arm64.dmg`.
+  Signature and image checks passed. Its read-only mounted application passed
+  the updated Qt/noVNC self-test and required QEMU/ADB verification in 2.22
+  seconds, with restricted PATH. The volume was detached successfully.
+
+Automatic defaults do not download or create a guest disk. Users still need a
+compatible bootable disk and must select its architecture if it differs from
+the host. The platform and distribution limitations above still apply.

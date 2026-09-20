@@ -9,7 +9,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 - **窗口化界面**：内嵌 noVNC 显示，支持全屏、运行日志和虚拟机设置。
 - **虚拟机管理**：配置磁盘、架构、内存、CPU 和固件，支持启动、正常关机与强制停止。
-- **QEMU 兼容层**：探测 Linux KVM、macOS HVF、Windows WHPX；跨架构或无硬件加速时可显式选择 TCG。
+- **QEMU 兼容层**：探测 Linux KVM、macOS HVF、Windows WHPX；自动模式在跨架构或未发现可用硬件加速时回退 TCG。
 - **APK 安装**：通过经过设备授权的 ADB 安装应用，优先使用安装包内置的 ADB。
 - **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
@@ -45,8 +45,12 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
 2. 按照 [客体镜像文档](./docs/guest-image.md) 准备可启动的 Linux/Android 磁盘。
-3. 在设置中选择磁盘、客体架构、内存、CPU 和加速方式；ARM64 客体需要 UEFI 固件，内置运行时可自动发现随包固件。
+3. 点击启动并选择磁盘，程序自动识别 qcow2/raw 格式并保存选择；与宿主不同架构的客体仍需在设置中选择架构。
 4. 启动虚拟机；安装 APK 前，在 Android 中确认 ADB 授权提示。
+
+日志栏默认收起，可通过工具栏按钮展开。首次启动按宿主架构填写客体架构，CPU 默认取逻辑核心数的一半（1–4 核），内存取总内存的一半并按 GiB 向下取整（1–4 GiB）；无法检测时使用 2 核、2 GiB。已有设置不会被覆盖。
+
+QEMU 和 ARM 固件自动查找，设置中显示检测路径而不把安装位置写死；手动填写的路径优先。首次无配置时，也会查找应用数据目录下 `guests/androidbox-架构.qcow2` 或 `.raw`，其中架构为 `aarch64` 或 `x86_64`。不会扫描任意用户目录，也不会自动下载或生成 Android 磁盘。
 
 #### 从源码启动
 

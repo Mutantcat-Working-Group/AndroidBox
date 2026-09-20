@@ -63,7 +63,9 @@ because QEMU's machine architecture is `aarch64`.
 ## Architecture and Firmware
 
 Use x86_64 guests for x86_64 hosts, aarch64 guests for Apple Silicon/ARM64 hosts.
-Cross-architecture guests use slow TCG emulation and require explicit selection.
+Cross-architecture guests use slow TCG emulation in automatic acceleration mode.
+Select the guest architecture explicitly when it differs from the host; disk
+format detection does not determine CPU architecture.
 ARM64 requires a compatible `QEMU_EFI.fd` (AAVMF/EDK2) firmware file. For x86_64,
 leave firmware blank for BIOS boot, or select compatible firmware for a UEFI
 installation. The current firmware interface uses `-bios`; mutable per-VM UEFI

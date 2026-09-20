@@ -51,7 +51,8 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             disk = Path(directory) / "disk.qcow2"
             disk.touch()
-            with self.assertRaisesRegex(ValueError, "firmware"):
+            with patch("androidbox.runtime.VMConfig.resolved_firmware", return_value=""), \
+                    self.assertRaisesRegex(ValueError, "firmware"):
                 build_command(VMConfig(disk=str(disk), arch="aarch64"), "qemu", "tcg", 5900, 6000, 6001)
 
     def test_single_firmware_compatible_display(self):

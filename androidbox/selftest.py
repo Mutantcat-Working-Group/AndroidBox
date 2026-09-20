@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QApplication
 from androidbox.desktop import MainWindow, SettingsDialog
 from androidbox.bundled import verify_runtime
 from androidbox.display import DisplayServer
-from androidbox.runtime import VMConfig, reserve_ports
+from androidbox.runtime import VMConfig, load_config, reserve_ports
 
 
 def main(argv=None):
@@ -73,9 +73,29 @@ def main(argv=None):
                 assert not window.stop_action.isEnabled()
                 assert not window.install_action.isEnabled()
                 assert not window.windowIcon().isNull()
+                assert not window.log.isVisible()
+                assert not window.logs_action.isChecked()
+                window.logs_action.trigger()
+                assert window.log.isVisible()
+                assert window.logs_action.isChecked()
+                window.logs_action.trigger()
+                assert not window.log.isVisible()
                 dialog = SettingsDialog(VMConfig(), window)
                 assert dialog.config() == VMConfig()
                 dialog.close()
+                disk = Path(directory) / "guest.raw"
+                disk.write_bytes(b"\x00" * 512)
+                with patch("androidbox.desktop.QFileDialog.getOpenFileName", return_value=(str(disk), "")), \
+                        patch.object(window.pool, "submit") as submit:
+                    window.config = VMConfig()
+                    window.start_vm()
+                    assert window.config.disk == str(disk)
+                    assert window.config.disk_format == "raw"
+                    assert load_config().disk == str(disk)
+                    submit.assert_called_once()
+                    window.future = None
+                    window.close_display()
+                    window.update_actions()
                 assert window.grab().save(args.screenshot)
                 window.resize(640, 480)
                 app.processEvents()
