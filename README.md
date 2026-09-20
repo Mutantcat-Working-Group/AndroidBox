@@ -14,7 +14,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 - **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 
-**当前版本：`1.0.20260919`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB，但**尚未包含可启动的 Linux/Android 客体磁盘**，首次使用仍需自行准备镜像，不是开箱即用的完整 Android 发行版。
+**当前版本：`1.0.20260920`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB，但**尚未包含可启动的 Linux/Android 客体磁盘**，首次使用仍需自行准备镜像，不是开箱即用的完整 Android 发行版。
 
 ### 二、平台支持
 
@@ -142,14 +142,23 @@ macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整的 `dist/Android
 
 #### GitHub Actions 发布
 
-[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签。标签必须与源码版本一致，例如 `v1.0.20260919`；手动运行仅生成 CI artifacts，不发布 Release。
+[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签。标签必须与源码版本一致，例如 `v1.0.20260920`；手动运行仅生成 CI artifacts，不发布 Release。只推送 `main` 或修改版本字符串不会触发安装包发布。
+
+发布者在版本修改提交并推送后执行：
+
+```sh
+git tag -a v1.0.20260920 -m "AndroidBox 1.0.20260920"
+git push origin v1.0.20260920
+```
+
+工作流验证版本后并行构建四份安装包，全部验证通过才创建并发布 Release；失败时不会发布缺少附件的版本。进度可在仓库的 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml) 查看。
 
 | 平台 | 当前版本产物 |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260919-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20260919-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260919-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260919-Linux-x86_64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20260920-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20260920-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20260920-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20260920-Linux-x86_64.AppImage` |
 
 每个原生构建执行单元测试、Qt/noVNC 冒烟测试，以及包内 QEMU/ADB 检查；随后再次检查 Windows 实际安装目录、macOS 只读挂载的 DMG 或 Linux 解包后的 AppImage。Windows 安装测试使用含空格路径，并在结束后卸载。
 

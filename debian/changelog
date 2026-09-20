@@ -1,3 +1,10 @@
+androidbox (1.0.20260920-1) unstable; urgency=medium
+
+  * Publish bundled desktop installers for Windows, macOS and Linux.
+  * Detect first-launch defaults and collapse logs by default.
+
+ -- tyza66 <shun_@outlook.com>  Sun, 20 Sep 2026 12:00:00 +0800
+
 androidbox (1.0.20260919-1) unstable; urgency=medium
 
   * Rebrand host runtime and desktop IDs as AndroidBox / org.mutantcat.androidbox.

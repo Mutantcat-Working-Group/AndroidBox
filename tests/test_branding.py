@@ -29,7 +29,7 @@ class BrandingTests(unittest.TestCase):
         path = ROOT / "data" / f"{APP_ID}.desktop"
         self.assertTrue(path.exists())
         entry = configparser.ConfigParser(interpolation=None)
-        entry.read(path)
+        entry.read(path, encoding="utf-8")
         self.assertEqual(entry["Desktop Entry"]["Name"], "AndroidBox")
         self.assertEqual(entry["Desktop Entry"]["Exec"], "androidbox")
         self.assertEqual(entry["Desktop Entry"]["Icon"], APP_ID)

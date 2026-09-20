@@ -10,10 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ReleaseTests(unittest.TestCase):
     def test_source_versions_match_requested_release(self):
-        self.assertEqual(validate_versions(ROOT, "v1.0.20260919"), "1.0.20260919")
+        self.assertEqual(validate_versions(ROOT, "v1.0.20260920"), "1.0.20260920")
 
     def test_mismatched_or_unsafe_tag_is_rejected(self):
-        for tag in ("v1.0.20260920", "1.0.20260919", "v1.0.20260919;echo bad"):
+        for tag in ("v1.0.20260919", "1.0.20260920", "v1.0.20260920;echo bad"):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 validate_versions(ROOT, tag)
 

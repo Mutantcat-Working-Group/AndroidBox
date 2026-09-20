@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -45,7 +46,8 @@ class PackagingDownloadTests(unittest.TestCase):
                     patch.object(fetch_platform_tools.platform, "system", return_value="Darwin"):
                 fetch_platform_tools.install(target, archive=archive)
             self.assertTrue((target / "adb").is_file())
-            self.assertEqual((target / "adb").stat().st_mode & 0o111, 0o111)
+            if os.name != "nt":
+                self.assertEqual((target / "adb").stat().st_mode & 0o111, 0o111)
 
     def test_platform_tools_bad_checksum_preserves_target(self):
         with tempfile.TemporaryDirectory() as directory:
