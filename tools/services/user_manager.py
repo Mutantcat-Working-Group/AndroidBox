@@ -1,6 +1,7 @@
 # Copyright 2021 Erfan Abdi
 # SPDX-License-Identifier: GPL-3.0-or-later
 import logging
+import shutil
 import threading
 import tools.config
 import tools.helpers.net
@@ -13,6 +14,17 @@ from gi.repository import GLib
 stopping = False
 
 
+def _fallback_icon_source():
+    for candidate in (
+        Path(__file__).resolve().parents[2] / "androidbox" / "assets" / "AppIcon.png",
+        Path("/usr/lib/androidbox/androidbox/assets/AppIcon.png"),
+        Path("/usr/share/icons/hicolor/512x512/apps/org.mutantcat.androidbox.png"),
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def start(args, session, unlocked_cb=None):
 
     apps_dir = Path(session["xdg_data_home"]) / "applications"
@@ -20,6 +32,14 @@ def start(args, session, unlocked_cb=None):
 
     androidbox_user_state_dir = Path(session["androidbox_user_state"])
     androidbox_data_icons_dir = Path(session["androidbox_data"]) / "icons"
+    with suppress(OSError):
+        androidbox_data_icons_dir.mkdir(parents=True, exist_ok=True)
+    fallback_icon = androidbox_data_icons_dir / "androidbox-fallback.png"
+    if not fallback_icon.exists():
+        source = _fallback_icon_source()
+        if source:
+            with suppress(OSError):
+                shutil.copy2(source, fallback_icon)
 
     system_apps = [
         "com.android.calculator2",
@@ -117,7 +137,13 @@ def start(args, session, unlocked_cb=None):
         desktop_file.set_string("Desktop Entry", "Type", "Application")
         desktop_file.set_string("Desktop Entry", "Name", appInfo["name"])
         desktop_file.set_string("Desktop Entry", "Exec", f"androidbox app launch {packageName}")
-        desktop_file.set_string("Desktop Entry", "Icon", str(androidbox_data_icons_dir / f"{packageName}.png"))
+        icon_path = androidbox_data_icons_dir / f"{packageName}.png"
+        if not icon_path.is_file():
+            icon_path = fallback_icon if fallback_icon.is_file() else None
+        if icon_path is None:
+            desktop_file.set_string("Desktop Entry", "Icon", "org.mutantcat.androidbox")
+        else:
+            desktop_file.set_string("Desktop Entry", "Icon", str(icon_path))
         glib_key_file_prepend_string_list(desktop_file, "Desktop Entry", "Categories", ["X-AndroidBox-App"])
         desktop_file.set_string_list("Desktop Entry", "X-Purism-FormFactor", ["Workstation", "Mobile"])
         glib_key_file_prepend_string_list(desktop_file, "Desktop Entry", "Actions", ["app-settings"])
@@ -126,7 +152,13 @@ def start(args, session, unlocked_cb=None):
 
         desktop_file.set_string("Desktop Action app-settings", "Name", "App Settings")
         desktop_file.set_string("Desktop Action app-settings", "Exec", f"androidbox app intent android.settings.APPLICATION_DETAILS_SETTINGS package:{packageName}")
-        desktop_file.set_string("Desktop Action app-settings", "Icon", str(androidbox_data_icons_dir / "com.android.settings.png"))
+        settings_icon = androidbox_data_icons_dir / "com.android.settings.png"
+        if not settings_icon.is_file():
+            settings_icon = fallback_icon if fallback_icon.is_file() else None
+        if settings_icon is None:
+            desktop_file.set_string("Desktop Action app-settings", "Icon", "org.mutantcat.androidbox")
+        else:
+            desktop_file.set_string("Desktop Action app-settings", "Icon", str(settings_icon))
 
         desktop_file.save_to_file(str(desktop_file_path))
 
