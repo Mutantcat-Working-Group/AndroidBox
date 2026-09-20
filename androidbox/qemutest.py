@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+import traceback
 from unittest.mock import patch
 
 from PySide6.QtCore import QTimer
@@ -76,6 +77,7 @@ def main(argv=None):
                 print(f"Real QEMU/noVNC display passed ({args.arch}/{args.accel}); screenshot: {args.screenshot}")
                 finish()
             except Exception as error:
+                traceback.print_exc()
                 finish(str(error))
 
         def poll():
