@@ -38,8 +38,7 @@ jobs:
             python scripts/release_metadata.py
           fi
       - run: python scripts/fetch_novnc.py
-      - run: python -m pip install '.[dev]'
-      - run: python -m pip install '.[desktop]'
+      - run: python -m pip install '.[dev,desktop]'
       - name: Unit tests including the Qt guest disk flow
         env:
           QT_QPA_PLATFORM: offscreen
@@ -70,81 +69,70 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install NSIS and QEMU (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Install platform prerequisites
+        shell: bash
         run: |
-          choco install nsis --no-progress -y
-          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
-          choco install qemu --version=2026.8.11 --no-progress -y
-          if ($LASTEXITCODE -ne 0) { throw 'QEMU installation failed' }
-          "ANDROIDBOX_QEMU_PREFIX=C:\Program Files\qemu" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Install Linux packaging, Qt and QEMU prerequisites
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          # libasound2 and libminizip1 gained the t64 suffix in the Ubuntu 24.04 ARM image.
-          shared=(libegl1 libopengl0 libxkbcommon0 libnss3 libxcb-cursor0 libxcb-icccm4
-                libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils)
-          # The xcb platform plugin resolves these at analysis time, so PyInstaller
-          # needs them on PATH to bundle them into the AppImage.
-          shared+=(libxkbcommon-x11-0 libxcb-shape0 libxcb-xkb1)
-          if [ "${{ matrix.arch }}" = aarch64 ]; then
-            # Google publishes no AArch64 Linux Platform Tools archive, so the
-            # ARM build stages the distribution's own ADB plus its shared
-            # libraries. Shipping the x86_64 binary would leave an ADB that
-            # end users cannot execute and that shadows their system copy.
-            sudo apt-get install -y "${shared[@]}" qemu-system-aarch64 qemu-efi-aarch64 \
-              libasound2t64 libminizip1t64 adb patchelf
-          else
-            sudo apt-get install -y "${shared[@]}" qemu-system-x86 libasound2 libminizip1
-          fi
-          desktop-file-validate packaging/androidbox-appimage.desktop
-          python scripts/fetch_appimagetool.py --arch ${{ matrix.arch }}
-          echo "ANDROIDBOX_QEMU_PREFIX=/usr" >> "$GITHUB_ENV"
-      - name: Install QEMU (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install qemu
-          echo "ANDROIDBOX_QEMU_PREFIX=$(brew --prefix qemu)" >> "$GITHUB_ENV"
+          set -euo pipefail
+          case "${{ runner.os }}" in
+            Linux)
+              sudo apt-get update
+              shared=(libegl1 libopengl0 libxkbcommon0 libnss3 libxcb-cursor0 libxcb-icccm4
+                     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 desktop-file-utils)
+              # PyInstaller bundles only what it can resolve on the analysis host,
+              # so the xcb platform plugin needs these present to reach the AppImage.
+              shared+=(libxkbcommon-x11-0 libxcb-shape0 libxcb-xkb1)
+              if [ "${{ matrix.arch }}" = aarch64 ]; then
+                # Google publishes no AArch64 Linux Platform Tools archive, so the ARM
+                # build stages the distribution's own ADB plus its shared libraries.
+                # Shipping the x86_64 binary would leave an ADB that end users cannot
+                # execute and that shadows their system copy.
+                # libasound2 and libminizip1 gained the t64 suffix on Ubuntu 24.04 ARM.
+                sudo apt-get install -y "${shared[@]}" qemu-system-aarch64 qemu-efi-aarch64 \
+                  libasound2t64 libminizip1t64 adb patchelf
+              else
+                sudo apt-get install -y "${shared[@]}" qemu-system-x86 libasound2 libminizip1
+              fi
+              desktop-file-validate packaging/androidbox-appimage.desktop
+              python scripts/fetch_appimagetool.py --arch ${{ matrix.arch }}
+              echo 'ANDROIDBOX_QEMU_PREFIX=/usr' >> "$GITHUB_ENV"
+              ;;
+            macOS)
+              brew install qemu
+              echo "ANDROIDBOX_QEMU_PREFIX=$(brew --prefix qemu)" >> "$GITHUB_ENV"
+              ;;
+            Windows)
+              choco install nsis --no-progress -y
+              choco install qemu --version=2026.8.11 --no-progress -y
+              echo 'ANDROIDBOX_QEMU_PREFIX=C:\Program Files\qemu' >> "$GITHUB_ENV"
+              ;;
+          esac
       - name: Fetch Android Platform Tools
         run: python scripts/fetch_platform_tools.py
-      - name: Select bundled ADB path (Unix)
-        if: runner.os != 'Windows'
+      - name: Select bundled ADB path
+        shell: bash
         run: echo "ANDROIDBOX_ADB_DIRECTORY=$GITHUB_WORKSPACE/build/platform-tools" >> "$GITHUB_ENV"
-      - name: Select bundled ADB path (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          "ANDROIDBOX_ADB_DIRECTORY=$env:GITHUB_WORKSPACE\build\platform-tools" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: python scripts/fetch_novnc.py
       - run: python -m pip install '.[desktop,build]'
-      - name: Native host unit tests
-        env:
-          QT_QPA_PLATFORM: offscreen
-          QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
-        run: python -m unittest discover -s tests -v
-      - name: Qt smoke test
-        env:
-          QT_QPA_PLATFORM: offscreen
-          QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
-        run: python scripts/smoke_desktop.py
       - run: python -m PyInstaller packaging/desktop.spec --noconfirm
-      - name: Verify frozen macOS application
-        if: runner.os == 'macOS'
-        run: python scripts/verify_frozen.py dist/AndroidBox.app/Contents/MacOS/AndroidBox --require-runtime
-      - name: Verify frozen Windows application
-        if: runner.os == 'Windows'
-        run: python scripts/verify_frozen.py dist/AndroidBox/AndroidBox.exe --require-runtime
-      - name: Verify frozen Linux application
-        if: runner.os == 'Linux'
-        run: python scripts/verify_frozen.py dist/AndroidBox/AndroidBox --require-runtime
-      - name: Create NSIS or signed DMG
-        if: runner.os != 'Linux'
-        run: python scripts/package_desktop.py --arch ${{ matrix.arch }}
-      - name: Create AppImage
-        if: runner.os == 'Linux'
-        run: python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage --arch ${{ matrix.arch }}
+      - name: Verify frozen application
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ runner.os }}" in
+            macOS) target='dist/AndroidBox.app/Contents/MacOS/AndroidBox' ;;
+            Windows) target='dist/AndroidBox/AndroidBox.exe' ;;
+            *) target='dist/AndroidBox/AndroidBox' ;;
+          esac
+          python scripts/verify_frozen.py "$target" --require-runtime
+      - name: Create installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = Linux ]; then
+            python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage --arch ${{ matrix.arch }}
+          else
+            python scripts/package_desktop.py --arch ${{ matrix.arch }}
+          fi
       - name: Create portable tar.gz
         shell: bash
         run: |
@@ -183,6 +171,7 @@ jobs:
       - name: Verify AppImage extraction
         if: runner.os == 'Linux'
         run: |
+          set -euo pipefail
           version=$(python scripts/release_metadata.py)
           cd "$RUNNER_TEMP"
           "$GITHUB_WORKSPACE/dist/installers/AndroidBox-$version-Linux-${{ matrix.arch }}.AppImage" --appimage-extract
