@@ -82,6 +82,23 @@ Passed in the source Qt application:
 - The desktop shutdown action sends ACPI powerdown and the guest exits cleanly
   without terminating QEMU forcibly.
 
+Android guest networking (live check, 2026-09-20):
+
+- Android 13 reported `sys.boot_completed=1`; its `eth0` received
+  `192.168.240.112/24` with gateway and DNS `192.168.240.1` from the
+  `androidbox0` dnsmasq bridge. ConnectivityManager showed an Ethernet
+  network with `INTERNET` capability and a default route through that gateway.
+- `ping -c 3 223.5.5.5` and `ping -c 3 8.8.8.8` both returned 0% packet loss
+  (about 27 ms round trip through QEMU user-mode NAT).
+- DNS resolution works inside Android: `ping -c 2 www.baidu.com` resolved and
+  reached the Internet address.
+- TCP/HTTPS works inside Android: `curl https://www.baidu.com` returned HTTP
+  200 and `curl http://www.gstatic.com/generate_204` returned 204.
+- The forwarding chain was confirmed from the Linux guest: `enp0s3` holds the
+  QEMU NAT address `10.0.2.15/24` with default gateway `10.0.2.2`,
+  `androidbox0` holds `192.168.240.1/24`, and the ADB bridge forwards Android
+  port 5555 to a host-only QEMU forward.
+
 Known integration issues:
 
 - Mouse clicks can hit the notification shade instead of the visible target.
