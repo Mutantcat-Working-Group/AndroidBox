@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.fetch_guest_disk import image_remote_name, managed_disk_name, normalize_arch, parse_sha256sums
+from androidbox.guestdisk import image_remote_name, managed_disk_name, normalize_arch, parse_sha256sums
 
 
 class FetchGuestDiskTests(unittest.TestCase):

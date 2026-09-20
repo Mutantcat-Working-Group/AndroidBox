@@ -4,12 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
 import time
 
-from PySide6.QtCore import QLockFile, Qt, QTimer, QUrl
+from PySide6.QtCore import QLockFile, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -18,11 +19,14 @@ from PySide6.QtWidgets import (
     QPushButton, QSpinBox, QSplitter, QStackedWidget, QStyle, QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import APP_ID, APP_NAME
+from . import APP_ID, APP_NAME, guestdisk
 from .adb import install_apk, executable as adb_executable
 from .display import DisplayServer
 from .process import external_environment
-from .runtime import VMConfig, VirtualMachine, default_config, disk_format, executable, load_config, probe, save_config, state_directory
+from .runtime import (
+    VMConfig, VirtualMachine, default_config, disk_format, executable, load_config,
+    normalize_arch, probe, save_config, state_directory,
+)
 
 
 class SettingsDialog(QDialog):
@@ -134,6 +138,8 @@ class SettingsDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
+    prepare_progress = Signal(int, int)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
@@ -191,6 +197,16 @@ class MainWindow(QMainWindow):
         self.empty_status = QLabel("Stopped")
         self.empty_status.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.empty_status)
+        self.prepare_button = QPushButton("Prepare example guest disk")
+        self.prepare_button.setToolTip(
+            "Download the verified Ubuntu 24.04 minimal cloud image for this computer's "
+            "architecture and create a ready-to-boot AndroidBox guest disk")
+        self.prepare_button.clicked.connect(self.prepare_guest_disk)
+        prepare_row = QHBoxLayout()
+        prepare_row.addStretch()
+        prepare_row.addWidget(self.prepare_button)
+        prepare_row.addStretch()
+        layout.addLayout(prepare_row)
         layout.addStretch()
         self.stack.addWidget(empty)
         self.view = QWebEngineView()
@@ -202,6 +218,8 @@ class MainWindow(QMainWindow):
         splitter.setSizes([600, 140])
         self.setCentralWidget(splitter)
         self.log.hide()
+        self.prepare_progress.connect(self.on_prepare_progress)
+        self.update_empty_state()
         self.statusBar().showMessage("Stopped")
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
@@ -229,6 +247,39 @@ class MainWindow(QMainWindow):
         self.install_action.setEnabled(not busy and running and not self.shutdown_requested)
         if hasattr(self, "native_action"):
             self.native_action.setEnabled(not busy and not running and not native_running)
+        self.update_empty_state()
+
+    def managed_disk(self):
+        return guestdisk.managed_disk_path(normalize_arch(self.config.arch))
+
+    def update_empty_state(self):
+        ready = bool(self.config.disk) or self.managed_disk().is_file()
+        self.prepare_button.setVisible(not ready and self.future is None)
+        # Only adjust the two idle labels; Starting..., Start failed and the
+        # preparation progress texts are event-driven and must survive polling.
+        if self.future is None and not self.vm.running and self.empty_status.text() in ("Stopped", "No guest disk yet"):
+            self.empty_status.setText("Stopped" if ready else "No guest disk yet")
+
+    def prepare_guest_disk(self):
+        arch = normalize_arch(platform.machine())
+        directory = state_directory() / "guests"
+        self.empty_status.setText("Preparing guest disk...")
+        self.report(f"Preparing an example guest disk for {arch} in {directory}")
+
+        def progress(downloaded, total):
+            percent = int(downloaded * 100 / total) if total else 0
+            self.prepare_progress.emit(percent, downloaded)
+
+        def work():
+            return guestdisk.prepare(arch, directory, progress=progress)
+
+        self.operation = "prepare"
+        self.future = self.pool.submit(work)
+        self.update_actions()
+
+    def on_prepare_progress(self, percent, downloaded):
+        self.empty_status.setText(f"Preparing guest disk - {percent}%")
+        self.statusBar().showMessage(f"Downloading example image - {percent}% ({downloaded // 1024 // 1024} MiB)")
 
     def settings(self):
         dialog = SettingsDialog(self.config, self)
@@ -349,6 +400,18 @@ class MainWindow(QMainWindow):
                     self.report(f"QEMU running | {self.config.arch} | {result.upper()}")
                 elif operation == "stop":
                     self.report("Shutdown requested" if self.vm.running else "Stopped")
+                elif operation == "prepare":
+                    disk = Path(result)
+                    try:
+                        config = replace(self.config, disk=str(disk), disk_format=disk_format(disk))
+                        save_config(config)
+                    except (OSError, ValueError) as error:
+                        self.empty_status.setText("Preparation failed")
+                        QMessageBox.warning(self, APP_NAME, str(error))
+                    else:
+                        self.config = config
+                        self.empty_status.setText("Guest disk ready")
+                        self.report(f"Guest disk ready: {disk}")
                 else:
                     self.report(result or "Done")
             except Exception as error:
@@ -356,6 +419,8 @@ class MainWindow(QMainWindow):
                 if operation == "start":
                     self.empty_status.setText("Start failed")
                     self.close_display()
+                elif operation == "prepare":
+                    self.empty_status.setText("Preparation failed")
                 QMessageBox.warning(self, APP_NAME, str(error))
         if self.was_running and not self.vm.running:
             self.was_running = False
