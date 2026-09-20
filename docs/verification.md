@@ -355,6 +355,38 @@ publication requires a matching `v*` version tag. Manual dispatch builds
 artifacts without publishing. Release commands explicitly target this fork
 through `GH_REPO`, not the upstream repository.
 
+## Real-Guest Performance Measurements (2026-09-20)
+
+A live guest was started from the verified example disk
+`downloads/guest-test/androidbox-test.qcow2` (Ubuntu 24.04 + Waydroid,
+Android 13 arm64_only) with HVF, 4 vCPUs, 4096 MiB RAM, VNC and ADB on
+127.0.0.1. The guest reported a 1280x800 display at 74 Hz and identified its
+graphics pipeline as Skia/OpenGL, which confirms software rendering inside
+Waydroid with no host GPU involvement.
+
+- Notification shade animation over a 5 second continuous swipe: 331 frames at
+64.9 fps, and 321 frames at 63.8 fps on a second run. Janky frames 1.3-3.1%,
+frame time p50 5 ms, p90 7-9 ms, p99 69-113 ms. This is measured on the guest
+display, so the VNC encoding path does not lower it.
+- The host QEMU process consumed about 1.5 cores and 4.5 GiB RSS during that
+animation, and idle Android used under 1% guest CPU.
+- Launcher-drawer and smoke-app traces were inconclusive because those surfaces
+were not animating during the capture window.
+
+## Performance Options Boot Test
+
+The new CPU model, disk cache and TCG thread options were exercised on a blank
+ARM64 disk with every knob set to its most aggressive value
+(`-accel tcg,thread=multi`, `-cpu max`, `cache none`). QEMU 11.1.1 accepted the
+command line, QMP served requests for the full observation window, and the
+ARM64 serial console showed edk2 firmware executing: it read the TPM, reported
+the X64 image as unsupported on AARCH64 and stopped with no bootable image on a
+disk that has no EFI partition, which is the expected result for a blank disk.
+
+On the hardware-accelerated guest the same options are inert: KVM, HVF and WHPX
+ignore the TCG thread setting, and `host` remains the CPU model whenever
+passthrough is available.
+
 These checks validate bundled desktop clients on CI runners. They do not
 certify clean end-user machines, all hardware accelerators or full Android
 compatibility. No bootable Linux/Android guest is included. The Android input,

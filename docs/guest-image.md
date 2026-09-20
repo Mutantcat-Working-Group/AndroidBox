@@ -120,7 +120,40 @@ NVRAM and Secure Boot are not implemented. Install the EFI fallback boot path
 The client embeds QEMU's VNC display using noVNC. The guest compositor and Android
 use software rendering as the compatibility baseline. Hardware GPU acceleration,
 audio forwarding and host clipboard/file sharing are **not implemented** in this
-first backend; do not assume gaming-level performance or media support.
+first backend; see [Performance](performance.md) for what that means for games.
+
+## Performance
+
+See [performance.md](performance.md).
+
+Hardware acceleration dominates everything else. Match the guest architecture to
+the host so `auto` can pick KVM (Linux), HVF (Apple Silicon) or WHPX (Windows);
+cross-architecture guests fall back to TCG emulation and are an order of
+magnitude slower. Homebrew's `qemu-system-x86_64` on macOS supports TCG only, so
+Intel Macs running x86_64 guests use the emulator as well.
+
+Settable in Settings and stored per host:
+
+- CPU cores and memory. Android 13 with Waydroid wants at least 4 GiB and 2 vCPUs;
+  6-8 GiB and 4-6 cores are comfortable. Defaults scale with the host.
+- CPU model: `host` passes the real CPU through (fastest), `max` enables all guest
+  features, `qemu64` is the portable x86_64 baseline. TCG and WHPX use `max`
+  automatically because they expose no host-passthrough model.
+- TCG threads: `multi` spreads emulation over host threads and helps
+  cross-architecture guests; `single` is the safest fallback for hosts where the
+  multi-threaded TCG build is unstable. Hardware accelerators ignore this setting.
+- Disk cache: `writeback` (default) keeps the host page cache, `none` bypasses it
+  with direct I/O, `unsafe` additionally ignores guest flush requests. `none` can
+  fail on filesystems without `O_DIRECT`; `unsafe` risks the guest filesystem if
+  the host crashes.
+
+### Games
+
+2D, casual and turn-based titles are usable on HVF/KVM/WHPX with 4 GiB and four
+cores. Demanding 3D games are not: Android renders through Waydroid's software
+rasteriser, the framebuffer travels over VNC, and there is no GPU passthrough or
+audio forwarding yet. Expect single-digit to low-double-digit frame rates at
+best, and treat smooth play as out of scope until guest 3D acceleration exists.
 
 The guest ADB bridge forwards guest port 5555 to the Android container. QEMU
 forwards a random **host loopback-only** port to it. Install host Android SDK
@@ -136,4 +169,6 @@ or use bridged/public guest networking with this configuration.
 - Android desktop is visible and keyboard/pointer input reaches it.
 - APK installation succeeds after ADB authorization.
 - Guest shutdown exits QEMU without requiring Force stop.
+- Settings reports a hardware accelerator (KVM/HVF/WHPX), not TCG, when the guest
+  architecture matches the host.
 - Repeat on Windows/WHPX, macOS/HVF and Linux/KVM before declaring support.

@@ -46,6 +46,23 @@ class SettingsDialog(QDialog):
         self.accel.addItems(["auto", "tcg", "kvm", "hvf", "whpx"])
         self.accel.setCurrentText(config.accelerator)
         form.addRow("Acceleration", self.accel)
+        self.cpu_mode = QComboBox()
+        self.cpu_mode.setToolTip("Host passes the CPU model through to the guest; max offers the "
+                                 "widest feature set; qemu64 is the portable x86_64 baseline.")
+        self.update_cpu_models(config.cpu_mode)
+        form.addRow("CPU model", self.cpu_mode)
+        self.cache = QComboBox()
+        self.cache.addItems(["writeback", "none", "unsafe"])
+        self.cache.setCurrentText(config.disk_cache)
+        self.cache.setToolTip("Writeback is the balanced default, none bypasses the host page cache, "
+                              "unsafe ignores guest flush requests and risks data on host crashes.")
+        form.addRow("Disk cache", self.cache)
+        self.tcg = QComboBox()
+        self.tcg.addItems(["auto", "multi", "single"])
+        self.tcg.setCurrentText(config.tcg_threads)
+        self.tcg.setToolTip("Multi-threaded TCG spreads guest CPU emulation over host threads; "
+                            "single keeps it on one thread and can help some hosts.")
+        form.addRow("TCG threads", self.tcg)
         self.memory = QSpinBox()
         self.memory.setRange(1024, 262144)
         self.memory.setSingleStep(1024)
@@ -58,6 +75,7 @@ class SettingsDialog(QDialog):
         form.addRow("CPU cores", self.cpus)
         self.arch.currentTextChanged.connect(self.update_detected_paths)
         self.binary.textChanged.connect(self.update_detected_paths)
+        self.arch.currentTextChanged.connect(lambda: self.update_cpu_models())
         self.update_detected_paths()
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -75,6 +93,14 @@ class SettingsDialog(QDialog):
         firmware = config.resolved_firmware()
         self.firmware.setPlaceholderText(f"Automatic: {firmware or ('Not found' if config.arch == 'aarch64' else 'Not required')}")
         self.firmware.setToolTip(self.firmware.placeholderText())
+
+    def update_cpu_models(self, preferred=None):
+        values = ["auto", "host", "max", "qemu64"] if self.arch.currentText() == "x86_64" else ["auto", "host", "max"]
+        selected = preferred or self.cpu_mode.currentText()
+        self.cpu_mode.clear()
+        self.cpu_mode.addItems(values)
+        if selected in values:
+            self.cpu_mode.setCurrentText(selected)
 
     def path_row(self, form, name, value):
         field = QLineEdit(value)
@@ -102,7 +128,9 @@ class SettingsDialog(QDialog):
         return VMConfig(disk=self.disk.text().strip(), qemu=self.binary.text().strip(),
                         firmware=self.firmware.text().strip(), arch=self.arch.currentText(),
                         memory_mb=self.memory.value(), cpus=self.cpus.value(),
-                        accelerator=self.accel.currentText(), disk_format=self.format.currentText())
+                        accelerator=self.accel.currentText(), disk_format=self.format.currentText(),
+                        cpu_mode=self.cpu_mode.currentText(), disk_cache=self.cache.currentText(),
+                        tcg_threads=self.tcg.currentText())
 
 
 class MainWindow(QMainWindow):

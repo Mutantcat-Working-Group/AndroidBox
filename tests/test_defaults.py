@@ -55,7 +55,7 @@ class DefaultConfigTests(unittest.TestCase):
             self.assertEqual(config.disk, "/chosen.raw")
 
     def test_resource_defaults_are_bounded(self):
-        for cores, memory, expected in [(None, None, (2, 2048)), (1, 2048, (1, 1024)), (128, 131072, (4, 4096))]:
+        for cores, memory, expected in [(None, None, (2, 2048)), (1, 2048, (1, 1024)), (128, 131072, (6, 6144))]:
             with self.subTest(cores=cores), patch.object(runtime.os, "cpu_count", return_value=cores), \
                     patch.object(runtime, "host_memory_mb", return_value=memory):
                 config = runtime.default_config()

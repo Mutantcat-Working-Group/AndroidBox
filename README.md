@@ -48,7 +48,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 3. 点击启动并选择磁盘，程序自动识别 qcow2/raw 格式并保存选择；与宿主不同架构的客体仍需在设置中选择架构。
 4. 启动虚拟机；安装 APK 前，在 Android 中确认 ADB 授权提示。
 
-日志栏默认收起，可通过工具栏按钮展开。首次启动按宿主架构填写客体架构，CPU 默认取逻辑核心数的一半（1–4 核），内存取总内存的一半并按 GiB 向下取整（1–4 GiB）；无法检测时使用 2 核、2 GiB。已有设置不会被覆盖。
+日志栏默认收起，可通过工具栏按钮展开。首次启动按宿主架构填写客体架构，CPU 默认取逻辑核心数的一半（1–6 核），内存取总内存的一半并按 GiB 向下取整（1–6 GiB）；无法检测时使用 2 核、2 GiB。已有设置不会被覆盖。性能相关设置还有 CPU 型号（host/max/qemu64）、TCG 线程数（单线程/多线程）和磁盘缓存（writeback/none/unsafe），均可在设置中调整，默认值保持原有行为。
 
 QEMU 和 ARM 固件自动查找，设置中显示检测路径而不把安装位置写死；手动填写的路径优先。首次无配置时，也会查找应用数据目录下 `guests/androidbox-架构.qcow2` 或 `.raw`，其中架构为 `aarch64` 或 `x86_64`。不会扫描任意用户目录；未运行准备脚本时不会自动下载或生成磁盘，运行 `python scripts/fetch_guest_disk.py` 后生成的示例盘会被自动识别。
 
@@ -222,6 +222,7 @@ QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python script
 ### 七、相关文档与项目
 
 - [客体镜像准备](./docs/guest-image.md)：Linux/Android 磁盘配置与验证。
+- [性能与游戏](./docs/performance.md)：可调性能参数、实测帧率与游戏能力边界。
 - [验证记录](./docs/verification.md)：本地与 CI 实测结果、平台限制及待解决问题。
 - [Waydroid](https://github.com/waydroid/waydroid)：本项目的上游容器运行时。
 - [QEMU](https://www.qemu.org/)：跨平台虚拟机后端。

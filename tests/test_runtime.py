@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from androidbox.runtime import VMConfig, build_command, choose_accelerator, normalize_arch, load_config, save_config, executable
+from androidbox.runtime import (VMConfig, block_cache, build_command, choose_accelerator,
+    normalize_arch, load_config, save_config, select_cpu, executable)
 
 
 class RuntimeTests(unittest.TestCase):
@@ -91,6 +92,63 @@ class RuntimeTests(unittest.TestCase):
             for value in (None, [], {}, 42):
                 with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                     VMConfig(**{field: value}).validate(check_files=False)
+
+    def test_cpu_model_selection(self):
+        self.assertEqual(select_cpu("kvm", "auto"), "host")
+        self.assertEqual(select_cpu("hvf", "auto"), "host")
+        self.assertEqual(select_cpu("tcg", "auto"), "max")
+        self.assertEqual(select_cpu("whpx", "auto"), "max")
+        self.assertEqual(select_cpu("whpx", "host"), "max")
+        self.assertEqual(select_cpu("hvf", "qemu64"), "qemu64")
+
+    def test_disk_cache_values(self):
+        self.assertIsNone(block_cache("writeback"))
+        self.assertEqual(block_cache("none"), {"direct": True})
+        self.assertEqual(block_cache("unsafe"), {"no-flush": True})
+
+    def test_performance_options_reach_the_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            disk = Path(directory) / "disk.qcow2"
+            disk.touch()
+            config = VMConfig(disk=str(disk), cpu_mode="qemu64", disk_cache="none", tcg_threads="multi")
+            command = build_command(config, "qemu-system-x86_64", "tcg", 5900, 6000, 6001)
+            self.assertEqual(command[command.index("-accel") + 1], "tcg,thread=multi")
+            self.assertEqual(command[command.index("-cpu") + 1], "qemu64")
+            block = json.loads(command[command.index("-blockdev") + 1])
+            self.assertEqual(block["cache"], {"direct": True})
+            for cache, expected in [("writeback", None), ("unsafe", {"no-flush": True}), ("none", {"direct": True})]:
+                with self.subTest(cache=cache):
+                    plain = build_command(VMConfig(disk=str(disk), disk_cache=cache), "qemu", "tcg", 5900, 6000, 6001)
+                    block = json.loads(plain[plain.index("-blockdev") + 1])
+                    self.assertEqual(block.get("cache"), expected)
+
+    def test_hardware_acceleration_keeps_default_accel_property(self):
+        with tempfile.TemporaryDirectory() as directory:
+            disk = Path(directory) / "disk.qcow2"
+            disk.touch()
+            command = build_command(VMConfig(disk=str(disk), tcg_threads="multi"), "qemu", "hvf", 5900, 6000, 6001)
+            self.assertEqual(command[command.index("-accel") + 1], "hvf")
+
+    def test_performance_options_are_validated(self):
+        with self.assertRaisesRegex(ValueError, "CPU model"):
+            VMConfig(cpu_mode="turbo").validate(check_files=False)
+        with self.assertRaisesRegex(ValueError, "x86_64 CPU model"):
+            VMConfig(arch="aarch64", cpu_mode="qemu64").validate(check_files=False)
+        with self.assertRaisesRegex(ValueError, "disk cache"):
+            VMConfig(disk_cache="magic").validate(check_files=False)
+        with self.assertRaisesRegex(ValueError, "TCG thread"):
+            VMConfig(tcg_threads="many").validate(check_files=False)
+
+    def test_performance_options_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            config = VMConfig(disk="/disk.qcow2", cpu_mode="max", disk_cache="none", tcg_threads="single")
+            save_config(config, path)
+            self.assertEqual(load_config(path), config)
+
+    def test_defaults_expose_performance_settings(self):
+        config = VMConfig()
+        self.assertEqual((config.cpu_mode, config.disk_cache, config.tcg_threads), ("auto", "writeback", "auto"))
 
 
 if __name__ == "__main__":
