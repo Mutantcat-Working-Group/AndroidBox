@@ -9,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_nsis_uninstall_commands_quote_paths_with_spaces(self):
+        installer = (ROOT / "packaging/windows.nsi").read_text(encoding="utf-8")
+        self.assertIn("'\"$INSTDIR\\Uninstall.exe\"'", installer)
+        self.assertIn("'\"$INSTDIR\\Uninstall.exe\" /S'", installer)
+
     def test_source_versions_match_requested_release(self):
         self.assertEqual(validate_versions(ROOT, "v1.0.20260920"), "1.0.20260920")
 

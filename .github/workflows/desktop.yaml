@@ -119,6 +119,9 @@ jobs:
           $process = Start-Process -FilePath $installer -ArgumentList "/S /D=$install" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "NSIS install failed: $($process.ExitCode)" }
           try {
+            $entry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AndroidBox'
+            if ($entry.UninstallString -ne "`"$install\Uninstall.exe`"") { throw 'Invalid registered uninstall command' }
+            if ($entry.QuietUninstallString -ne "`"$install\Uninstall.exe`" /S") { throw 'Invalid registered silent uninstall command' }
             python scripts/verify_frozen.py "$install/AndroidBox.exe" --require-runtime
             if ($LASTEXITCODE -ne 0) { throw 'Installed application verification failed' }
           } finally {

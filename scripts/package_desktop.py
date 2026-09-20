@@ -41,7 +41,7 @@ def package_mac(version, arch, output):
 def package_windows(version, output):
     compiler = shutil.which("makensis") or str(Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "NSIS/makensis.exe")
     target = output / f"AndroidBox-{version}-Windows-x86_64-Setup.exe"
-    run(compiler, f"/DVERSION={version}",
+    run(compiler, "/WX", f"/DVERSION={version}",
         f"/DNUMERIC_VERSION={'.'.join(map(str, windows_version(version)))}",
         f"/DPAYLOAD={ROOT / 'dist/AndroidBox'}", f"/DOUTPUT={target}",
         f"/DLICENSE_FILE={ROOT / 'LICENSE'}",
