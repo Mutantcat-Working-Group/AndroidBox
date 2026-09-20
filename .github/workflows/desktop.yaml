@@ -21,6 +21,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
       - name: Validate version tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -34,7 +39,11 @@ jobs:
       - run: python scripts/fetch_novnc.py
       - run: python -m pip install '.[dev]'
       - run: python -m pip install '.[desktop]'
-      - run: python -m unittest discover -s tests -v
+      - name: Unit tests including the Qt guest disk flow
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
+        run: python -m unittest discover -s tests -v
       - run: ruff check .
 
   build:
@@ -99,6 +108,9 @@ jobs:
       - run: python scripts/fetch_novnc.py
       - run: python -m pip install '.[desktop,build]'
       - name: Native host unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
         run: python -m unittest discover -s tests -v
       - name: Qt smoke test
         env:
