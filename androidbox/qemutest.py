@@ -72,8 +72,14 @@ def main(argv=None):
                 qmp_execute(window.vm.qmp_port, "send-key", {"keys": [{"type": "qcode", "data": "esc"}]})
                 if not window.grab().save(args.screenshot):
                     raise RuntimeError("Could not save screenshot")
-                qmp_execute(window.vm.qmp_port, "quit")
-                window.vm.process.wait(timeout=10)
+                try:
+                    qmp_execute(window.vm.qmp_port, "quit")
+                except ConnectionResetError:
+                    # Some QEMU builds close QMP before the quit reply is delivered.
+                    pass
+                returncode = window.vm.process.wait(timeout=10)
+                if returncode != 0:
+                    raise RuntimeError(f"QEMU quit with exit code {returncode}")
                 print(f"Real QEMU/noVNC display passed ({args.arch}/{args.accel}); screenshot: {args.screenshot}")
                 finish()
             except Exception as error:
