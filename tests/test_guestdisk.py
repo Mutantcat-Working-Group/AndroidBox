@@ -3,9 +3,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
 import importlib.util
+import io
 import json
 import shutil
 import struct
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -132,6 +134,143 @@ class DownloadVerificationTests(unittest.TestCase):
                                         progress=lambda done, total: reports.append((done, total)))
             self.assertEqual(reports, [(2048, 2048)])
 
+    def test_download_resumes_a_partial_transfer(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "payload.img"
+            temporary = target.with_name(f".{target.name}.download")
+            temporary.write_bytes(b"andro")
+            digest = hashlib.sha256(b"androidbox").hexdigest()
+            ranges = []
+
+            class Response(io.BytesIO):
+                status = 206
+                headers = {"Content-Length": "5"}
+
+            def fake_open(url, timeout, headers=None):
+                ranges.append(headers.get("Range") if headers else None)
+                return Response(b"idbox")
+
+            reports = []
+            with patch.object(guestdisk, "_open", side_effect=fake_open):
+                guestdisk.download_verified("https://example/payload.img", target, digest,
+                                            progress=lambda done, total: reports.append((done, total)))
+            self.assertEqual(target.read_bytes(), b"androidbox")
+            self.assertEqual(ranges, ["bytes=5-"])
+            # The bytes already on disk are reported first, with no total yet.
+            self.assertEqual(reports[0], (5, None))
+            self.assertEqual(reports[-1], (10, 10))
+            self.assertFalse(temporary.exists())
+
+    def test_download_restarts_when_the_server_ignores_the_range(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "payload.img"
+            temporary = target.with_name(f".{target.name}.download")
+            temporary.write_bytes(b"stale")
+            digest = hashlib.sha256(b"androidbox").hexdigest()
+
+            class Response(io.BytesIO):
+                status = 200
+                headers = {"Content-Length": "10"}
+
+            with patch.object(guestdisk, "_open", return_value=Response(b"androidbox")):
+                guestdisk.download_verified("https://example/payload.img", target, digest)
+            self.assertEqual(target.read_bytes(), b"androidbox")
+
+    def test_download_keeps_the_partial_transfer_when_a_retry_fails(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "payload.img"
+            temporary = target.with_name(f".{target.name}.download")
+            digest = hashlib.sha256(b"androidbox").hexdigest()
+            with patch.object(guestdisk, "_open", side_effect=ValueError("Cannot reach host")):
+                with self.assertRaises(ValueError):
+                    guestdisk.download_verified("https://example/payload.img", target, digest)
+            self.assertFalse(target.exists())
+            self.assertFalse(temporary.exists())
+
+
+class TrustStoreTests(unittest.TestCase):
+    def _captured_context_kwargs(self):
+        captured = {}
+        real = guestdisk.ssl.create_default_context
+
+        def capture(**kwargs):
+            captured.update(kwargs)
+            return real(**kwargs)
+
+        return captured, capture
+
+    def test_context_trusts_the_bundled_ca_bundle(self):
+        import certifi
+        captured, capture = self._captured_context_kwargs()
+        with patch.object(guestdisk.ssl, "create_default_context", side_effect=capture):
+            context = guestdisk.ssl_context()
+        self.assertIsInstance(context, guestdisk.ssl.SSLContext)
+        self.assertEqual(captured.get("cafile"), certifi.where())
+
+    def test_context_falls_back_to_the_host_trust_store_without_certifi(self):
+        captured, capture = self._captured_context_kwargs()
+        with patch.object(guestdisk.ssl, "create_default_context", side_effect=capture), \
+                patch.dict(sys.modules, {"certifi": None}):
+            guestdisk.ssl_context()
+        self.assertNotIn("cafile", captured)
+
+
+class MirrorFallbackTests(unittest.TestCase):
+    def test_manifest_falls_back_to_a_mirror(self):
+        digest = "0" * 64
+        requested = []
+
+        def fake_open(url, timeout, headers=None):
+            requested.append(url)
+            if "cloud-images.ubuntu.com" in url:
+                raise ValueError("Cannot reach the official host")
+            return io.BytesIO(f"{digest} *ubuntu-24.04-minimal-cloudimg-amd64.img\n".encode())
+
+        with patch.object(guestdisk, "_open", side_effect=fake_open):
+            checksums, url = guestdisk.remote_checksums()
+        self.assertEqual(checksums["ubuntu-24.04-minimal-cloudimg-amd64.img"], digest)
+        self.assertIn("mirrors.ustc.edu.cn", url)
+        self.assertEqual(len(requested), 2)
+
+    def test_manifest_reports_every_failed_mirror(self):
+        with patch.object(guestdisk, "_open", side_effect=ValueError("Cannot reach host")):
+            with self.assertRaises(ValueError) as caught:
+                guestdisk.remote_checksums()
+        message = str(caught.exception)
+        self.assertIn("Use a local image", message)
+        self.assertEqual(message.count("Cannot reach host"), len(guestdisk.MIRRORS))
+
+    def test_base_image_falls_back_to_a_mirror(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / guestdisk.image_remote_name("x86_64")
+            digest = hashlib.sha256(b"payload").hexdigest()
+            requested = []
+
+            def fake_download(url, target_path, expected, progress=None):
+                requested.append(url)
+                if "mirrors.ustc.edu.cn" not in url:
+                    raise ValueError("Cannot reach host")
+                target_path.write_bytes(b"payload")
+                return target_path
+
+            with patch.object(guestdisk, "download_verified", side_effect=fake_download):
+                self.assertEqual(guestdisk.ensure_base_image(target, digest), target)
+            self.assertEqual(len(requested), 2)
+            self.assertIn("mirrors.ustc.edu.cn", requested[-1])
+
+    def test_base_image_reports_every_failed_mirror(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / guestdisk.image_remote_name("x86_64")
+            with patch.object(guestdisk, "download_verified", side_effect=ValueError("Cannot reach host")):
+                with self.assertRaises(ValueError) as caught:
+                    guestdisk.ensure_base_image(target, hashlib.sha256(b"payload").hexdigest())
+        self.assertIn("Use a local image", str(caught.exception))
+
 
 class PrepareTests(unittest.TestCase):
     def test_prepare_is_idempotent_without_network(self):
@@ -218,5 +357,81 @@ class PrepareFlowTests(unittest.TestCase):
             saved = json.loads((Path(directory) / "settings.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["disk"], str(overlay))
             self.assertEqual(saved["disk_format"], "qcow2")
+            window.close()
+        self.assertIsNotNone(application)
+
+    def test_local_image_button_prepares_the_chosen_architecture(self):
+        from types import SimpleNamespace
+
+        from PySide6.QtWidgets import QApplication, QDialog
+        from androidbox.desktop import MainWindow
+
+        application = QApplication.instance() or QApplication([])
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("androidbox.desktop.state_directory", return_value=Path(directory)), \
+                patch("androidbox.runtime.state_directory", return_value=Path(directory)), \
+                patch("androidbox.desktop.QMessageBox.warning"):
+            overlay = Path(directory) / "guests" / guestdisk.managed_disk_name("x86_64")
+            local = Path(directory) / "ubuntu-24.04-minimal-cloudimg-amd64.img"
+            local.write_bytes(b"cloud image")
+
+            class FakeDialog:
+                def __init__(self, parent=None):
+                    self.arch = SimpleNamespace(currentText=lambda: "x86_64")
+
+                def exec(self):
+                    return QDialog.Accepted
+
+                def image(self):
+                    return str(local)
+
+            window = MainWindow()
+            window.show()
+            self.assertTrue(window.local_button.isVisible())
+            def fake_prepare(arch, directory_argument, **kwargs):
+                overlay.parent.mkdir(parents=True, exist_ok=True)
+                overlay.write_bytes(b"QFI\xfb")
+                return overlay
+
+            with patch("androidbox.desktop.LocalImageDialog", FakeDialog), \
+                    patch("androidbox.desktop.guestdisk.prepare", side_effect=fake_prepare) as prepare:
+                window.use_local_image()
+                window.future.result(timeout=10)
+                window.poll()
+            self.assertEqual(prepare.call_args.args[0], "x86_64")
+            self.assertEqual(prepare.call_args.kwargs["local_image"], str(local))
+            self.assertEqual(window.config.disk, str(overlay))
+            self.assertEqual(window.config.arch, "x86_64")
+            self.assertFalse(window.local_button.isVisible())
+            window.close()
+        self.assertIsNotNone(application)
+
+    def test_local_image_button_ignores_a_cancelled_dialog(self):
+        from PySide6.QtWidgets import QApplication, QDialog
+        from androidbox.desktop import MainWindow
+
+        application = QApplication.instance() or QApplication([])
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("androidbox.desktop.state_directory", return_value=Path(directory)), \
+                patch("androidbox.runtime.state_directory", return_value=Path(directory)), \
+                patch("androidbox.desktop.QMessageBox.warning"):
+            class CancelledDialog:
+                def __init__(self, parent=None):
+                    self.arch = None
+
+                def exec(self):
+                    return QDialog.Rejected
+
+                def image(self):
+                    return ""
+
+            window = MainWindow()
+            window.show()
+            with patch("androidbox.desktop.LocalImageDialog", CancelledDialog), \
+                    patch("androidbox.desktop.guestdisk.prepare",
+                          side_effect=AssertionError("must not prepare")):
+                window.use_local_image()
+            self.assertIsNone(window.future)
+            self.assertTrue(window.local_button.isVisible())
             window.close()
         self.assertIsNotNone(application)

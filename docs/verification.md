@@ -518,3 +518,79 @@ Run 35544783411 confirmed the result: `validate` in 39s, then all five build
 jobs green, with `release` skipped as expected for a `workflow_dispatch`. The
 artifact names are unchanged, so the ten-artifact contract in
 `scripts/release_metadata.py` still holds.
+
+## Guest Disk Preparation TLS Failure (2026-09-21)
+
+A user installed `AndroidBox-1.0.20260921-macOS-arm64.dmg`, clicked **Prepare
+example guest disk**, and got:
+
+```text
+Cannot reach https://cloud-images.ubuntu.com/minimal/releases/noble/release/SHA256SUMS:
+<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+unable to get local issuer certificate (_ssl.c:1010)>
+```
+
+The host could reach that URL directly with both `curl` and `urllib`, so this was
+not a network problem.
+
+### Root Cause
+
+`strings` on the bundled `libcrypto.3.dylib` showed `OPENSSLDIR:
+"/opt/homebrew/etc/openssl@3"`, sourced from Homebrew's
+`openssl@3/3.6.3`. The library is not a direct dependency: it is dragged in by
+the QEMU payload through `libgnutls` -> `libnettle`/`libhogweed` -> `libp11-kit`
+-> `libcrypto`. That directory exists on the build machine but not on the user's
+machine, so `SSL_CTX_set_default_verify_paths()` loaded zero CAs and every
+verification failed with an issuer error. The bundle also shipped no CA
+certificates of its own, so there was nothing to fall back to. The Windows build
+has the same shape with the MSYS2 OpenSSL path.
+
+### Fix
+
+`guestdisk.ssl_context()` now builds its context with an explicit
+`cafile=certifi.where()`. This is decisive rather than incidental: with `cafile`
+set, CPython's `create_default_context` calls only `load_verify_locations` and
+skips `load_default_certs()` entirely, so verification is anchored exclusively to
+the bundled bundle and never consults the host OpenSSL configuration. `certifi`
+joined the `desktop` extra and `packaging/desktop.spec` now collects its data
+files, so the frozen application carries its own CA store.
+
+Reproduced the failure mode by overriding OpenSSL's search path with
+`SSL_CERT_FILE`/`SSL_CERT_DIR` pointing at nonexistent locations, which is what
+the user's machine effectively sees:
+
+```text
+host store CAs: 0                    <- the user's failure
+certifi-anchored CAs: 121
+HTTPS with certifi: 200 2174 bytes
+```
+
+Also confirmed the mechanism survives freezing: a throwaway PyInstaller build
+reported `CERTIFI_WHERE: .../\_internal/certifi/cacert.pem`, `EXISTS: True`,
+`CA_COUNT: 121` and a 200 response, and its `certifi` data layout (only
+`cacert.pem` and `py.typed` on disk, the module in the PYZ) is identical to the
+rebuilt `AndroidBox.app`.
+
+### Supporting Changes
+
+- Mirror fallback to `mirrors.ustc.edu.cn` and `mirror.nju.edu.cn`, both verified
+  to publish a manifest byte-identical to the official one (same 2174-byte
+  `SHA256SUMS`, digest `2d430162ceddeea4...`), so the digest still comes from
+  Ubuntu.
+- Retries with backoff, and resumable transfers via HTTP `Range`; a partial file
+  survives a failed attempt and is discarded only on a checksum mismatch.
+- A **Use a local image** entry point wired to the `local_image` parameter that
+  `ensure_base_image()` already accepted.
+- Failures now report through a details-enabled dialog, since one line per mirror
+  does not fit a plain message label.
+
+An end-to-end run of `guestdisk.prepare("aarch64", ...)` against the live network
+produced the managed `androidbox-aarch64.qcow2` (197120 bytes) plus a verified
+base image, with 219 progress reports whose totals matched the manifest size.
+
+### Bundling An Image Was Measured And Rejected
+
+The image is effectively incompressible (229,113,856 bytes gzip to 225,597,382),
+so shipping one inside each installer would roughly double installer size, about
++1.2 GiB across the five installers. The mirror fallback and the local-image path
+cover the restricted-network and offline cases at no size cost.

@@ -137,6 +137,46 @@ class SettingsDialog(QDialog):
                         tcg_threads=self.tcg.currentText())
 
 
+class LocalImageDialog(QDialog):
+    """Pick an already downloaded cloud image and the architecture it was built for."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Use a local cloud image")
+        self.setMinimumWidth(520)
+        form = QFormLayout(self)
+        self.path = QLineEdit()
+        self.path.setPlaceholderText("ubuntu-24.04-minimal-cloudimg-{amd64,arm64}.img")
+        browse = QPushButton()
+        browse.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        browse.setToolTip("Select the cloud image")
+        browse.setFixedWidth(36)
+        browse.clicked.connect(self.select_image)
+        row = QHBoxLayout()
+        row.addWidget(self.path)
+        row.addWidget(browse)
+        form.addRow("Cloud image", row)
+        self.arch = QComboBox()
+        self.arch.addItems(["x86_64", "aarch64"])
+        self.arch.setCurrentText(normalize_arch(platform.machine()))
+        self.arch.setToolTip("Architecture of the image; it decides which QEMU binary boots it")
+        form.addRow("Guest architecture", self.arch)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def select_image(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select the Ubuntu cloud image",
+                                              str(state_directory() / "guests"),
+                                              "Cloud images (*.img);;All files (*)")
+        if path:
+            self.path.setText(path)
+
+    def image(self):
+        return self.path.text().strip()
+
+
 class MainWindow(QMainWindow):
     prepare_progress = Signal(int, int)
 
@@ -151,6 +191,7 @@ class MainWindow(QMainWindow):
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.future = None
         self.operation = None
+        self.prepare_arch = None
         self.was_running = False
         self.native_process = None
         self.log_offset = 0
@@ -202,9 +243,15 @@ class MainWindow(QMainWindow):
             "Download the verified Ubuntu 24.04 minimal cloud image for this computer's "
             "architecture and create a ready-to-boot AndroidBox guest disk")
         self.prepare_button.clicked.connect(self.prepare_guest_disk)
+        self.local_button = QPushButton("Use a local image")
+        self.local_button.setToolTip(
+            "Create the guest disk from an Ubuntu 24.04 minimal cloud image you already "
+            "downloaded; its SHA256 is still verified against the official manifest")
+        self.local_button.clicked.connect(self.use_local_image)
         prepare_row = QHBoxLayout()
         prepare_row.addStretch()
         prepare_row.addWidget(self.prepare_button)
+        prepare_row.addWidget(self.local_button)
         prepare_row.addStretch()
         layout.addLayout(prepare_row)
         layout.addStretch()
@@ -237,6 +284,19 @@ class MainWindow(QMainWindow):
         self.log.appendPlainText(message)
         self.statusBar().showMessage(message)
 
+    def report_error(self, summary, error):
+        """Show a failure with its full text behind a details button.
+
+        Preparation failures carry one line per mirror, which does not survive
+        being squeezed into a single message box label.
+        """
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(APP_NAME)
+        box.setText(summary)
+        box.setDetailedText(str(error))
+        box.exec()
+
     def update_actions(self):
         busy = self.future is not None
         running = self.vm.running
@@ -255,6 +315,7 @@ class MainWindow(QMainWindow):
     def update_empty_state(self):
         ready = bool(self.config.disk) or self.managed_disk().is_file()
         self.prepare_button.setVisible(not ready and self.future is None)
+        self.local_button.setVisible(not ready and self.future is None)
         # Only adjust the two idle labels; Starting..., Start failed and the
         # preparation progress texts are event-driven and must survive polling.
         if self.future is None and not self.vm.running and self.empty_status.text() in ("Stopped", "No guest disk yet"):
@@ -273,6 +334,24 @@ class MainWindow(QMainWindow):
         def work():
             return guestdisk.prepare(arch, directory, progress=progress)
 
+        self.prepare_arch = arch
+        self.operation = "prepare"
+        self.future = self.pool.submit(work)
+        self.update_actions()
+
+    def use_local_image(self):
+        dialog = LocalImageDialog(self)
+        if dialog.exec() != QDialog.Accepted or not dialog.image():
+            return
+        arch = normalize_arch(dialog.arch.currentText())
+        directory = state_directory() / "guests"
+        self.empty_status.setText("Preparing guest disk...")
+        self.report(f"Preparing a {arch} guest disk from {dialog.image()}")
+
+        def work():
+            return guestdisk.prepare(arch, directory, local_image=dialog.image())
+
+        self.prepare_arch = arch
         self.operation = "prepare"
         self.future = self.pool.submit(work)
         self.update_actions()
@@ -403,11 +482,12 @@ class MainWindow(QMainWindow):
                 elif operation == "prepare":
                     disk = Path(result)
                     try:
-                        config = replace(self.config, disk=str(disk), disk_format=disk_format(disk))
+                        config = replace(self.config, disk=str(disk), disk_format=disk_format(disk),
+                                         arch=self.prepare_arch or self.config.arch)
                         save_config(config)
                     except (OSError, ValueError) as error:
                         self.empty_status.setText("Preparation failed")
-                        QMessageBox.warning(self, APP_NAME, str(error))
+                        self.report_error("Could not save the prepared guest disk", error)
                     else:
                         self.config = config
                         self.empty_status.setText("Guest disk ready")
@@ -421,7 +501,8 @@ class MainWindow(QMainWindow):
                     self.close_display()
                 elif operation == "prepare":
                     self.empty_status.setText("Preparation failed")
-                QMessageBox.warning(self, APP_NAME, str(error))
+                self.report_error("Guest disk preparation failed" if operation == "prepare"
+                                  else "Operation failed", error)
         if self.was_running and not self.vm.running:
             self.was_running = False
             self.vm.close_log()

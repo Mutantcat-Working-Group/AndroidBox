@@ -47,7 +47,11 @@ analysis = Analysis(
     [str(root / "scripts/desktop_entry.py")],
     pathex=[str(root)],
     binaries=runtime_binaries,
-    datas=collect_data_files("androidbox") + [(str(root / "LICENSE"), "licenses/androidbox")] + runtime_data,
+    # certifi ships the CA bundle the guest disk download verifies against: the
+    # QEMU payload pulls in an OpenSSL whose compiled-in CA directory does not
+    # exist on the user's machine.
+    datas=collect_data_files("androidbox") + collect_data_files("certifi")
+    + [(str(root / "LICENSE"), "licenses/androidbox")] + runtime_data,
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],

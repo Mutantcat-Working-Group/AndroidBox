@@ -9,7 +9,9 @@ writable. Shared by the desktop client and scripts/fetch_guest_disk.py.
 import hashlib
 from pathlib import Path
 import shutil
+import ssl
 import struct
+import time
 import urllib.error
 import urllib.request
 
@@ -20,6 +22,18 @@ BASE_URL = f"https://cloud-images.ubuntu.com/minimal/releases/{RELEASE}/release/
 IMAGE_PREFIX = "ubuntu-24.04-minimal-cloudimg"
 DEFAULT_DISK_SIZE = "32G"
 DEBIAN_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
+# The official host is slow or has its TLS intercepted on many networks, so
+# preparation falls back to mirrors that publish a byte-identical manifest.
+# The manifest still decides the digest, so a mirror can only ever serve the
+# image Ubuntu published.
+MIRRORS = (
+    BASE_URL,
+    "https://mirrors.ustc.edu.cn/ubuntu-cloud-images/minimal/releases/noble/release/",
+    "https://mirror.nju.edu.cn/ubuntu-cloud-images/minimal/releases/noble/release/",
+)
+DOWNLOAD_ATTEMPTS = 3
+RETRY_DELAY = 1.5
+DOWNLOAD_TIMEOUT = 120
 
 QCOW2_MAGIC = b"QFI\xfb"
 QCOW2_VERSION = 3
@@ -83,18 +97,47 @@ def parse_sha256sums(text):
     return checksums
 
 
-def _open(url, timeout):
+def ssl_context():
+    """Return a context anchored to the CA bundle shipped inside the application.
+
+    The frozen build links whatever OpenSSL its QEMU payload pulled in, and that
+    library's compiled-in CA directory (Homebrew, MSYS2 and friends) does not
+    exist on the user's machine. certifi carries its own bundle, so verification
+    never depends on the host trust store.
+    """
     try:
-        return urllib.request.urlopen(url, timeout=timeout)
+        import certifi
+    except ImportError:  # A source checkout without the desktop extra.
+        return ssl.create_default_context()
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+def _open(url, timeout, headers=None):
+    request = urllib.request.Request(url, headers=dict(headers or {}))
+    try:
+        return urllib.request.urlopen(request, timeout=timeout, context=ssl_context())
     except (urllib.error.URLError, OSError) as error:
         raise ValueError(f"Cannot reach {url}: {error}") from error
 
 
-def remote_checksums():
-    url = f"{BASE_URL}SHA256SUMS"
+def _manifest(base_url):
+    url = f"{base_url}SHA256SUMS"
     with _open(url, 60) as response:
         text = response.read().decode("utf-8", errors="replace")
     return parse_sha256sums(text), url
+
+
+def remote_checksums():
+    errors = []
+    for base_url in MIRRORS:
+        try:
+            return _manifest(base_url)
+        except ValueError as error:
+            errors.append(str(error))
+    raise ValueError("Cannot download the official image manifest. Check the network "
+                     "connection, or download the Ubuntu 24.04 minimal cloud image for "
+                     "this architecture yourself and pick it with 'Use a local image':\n"
+                     + "\n".join(errors))
 
 
 def sha256_checksum(path):
@@ -106,25 +149,53 @@ def sha256_checksum(path):
 
 
 def download_verified(url, target, expected, progress=None):
+    """Stream url into target, resuming a partial transfer and verifying SHA256.
+
+    Bytes already transferred survive a failed attempt so the next one resumes
+    them; only a wrong digest is discarded.
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.download")
-    try:
-        with _open(url, 120) as response, temporary.open("wb") as stream:
-            length = response.headers.get("Content-Length")
-            total = int(length) if length and length.isdigit() else None
-            checksum, downloaded = hashlib.sha256(), 0
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        try:
+            checksum = _download_attempt(url, temporary, progress)
+        except ValueError:
+            if attempt + 1 == DOWNLOAD_ATTEMPTS:
+                raise
+            time.sleep(RETRY_DELAY * (attempt + 1))
+        else:
+            break
+    if checksum.hexdigest().lower() != expected.lower():
+        temporary.unlink(missing_ok=True)
+        raise ValueError(f"SHA256 mismatch for {target.name}")
+    temporary.replace(target)
+    return target
+
+
+def _download_attempt(url, temporary, progress):
+    """Append the missing bytes of url to temporary and return their checksum."""
+    downloaded = temporary.stat().st_size if temporary.is_file() else 0
+    checksum = hashlib.sha256()
+    if downloaded:
+        with temporary.open("rb") as partial:
+            while chunk := partial.read(1024 * 1024):
+                checksum.update(chunk)
+        if progress:
+            progress(downloaded, None)
+    with _open(url, DOWNLOAD_TIMEOUT, {"Range": f"bytes={downloaded}-"} if downloaded else None) as response:
+        if downloaded and getattr(response, "status", None) == 200:
+            # The server ignored the range request and resent the whole file.
+            downloaded, checksum = 0, hashlib.sha256()
+        length = response.headers.get("Content-Length")
+        total = int(length) + downloaded if length and length.isdigit() else None
+        with temporary.open("ab" if downloaded else "wb") as stream:
             while chunk := response.read(1024 * 1024):
                 stream.write(chunk)
                 checksum.update(chunk)
                 downloaded += len(chunk)
                 if progress:
                     progress(downloaded, total)
-        if checksum.hexdigest().lower() != expected.lower():
-            raise ValueError(f"SHA256 mismatch for {target.name}")
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return target
+    return checksum
 
 
 def ensure_base_image(target, expected, local=None, progress=None):
@@ -142,7 +213,15 @@ def ensure_base_image(target, expected, local=None, progress=None):
         if sha256_checksum(target).lower() == expected.lower():
             return target
         raise ValueError(f"Existing example image failed SHA256 verification: {target}")
-    return download_verified(f"{BASE_URL}{target.name}", target, expected, progress)
+    errors = []
+    for base_url in MIRRORS:
+        try:
+            return download_verified(f"{base_url}{target.name}", target, expected, progress)
+        except ValueError as error:
+            errors.append(str(error))
+    raise ValueError("Cannot download the Ubuntu 24.04 minimal cloud image. Check the "
+                     "network connection, or download the image for this architecture "
+                     "yourself and pick it with 'Use a local image':\n" + "\n".join(errors))
 
 
 def write_overlay(path, backing_name, virtual_size):

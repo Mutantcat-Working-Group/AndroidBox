@@ -14,7 +14,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 - **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 
-**当前版本：`1.0.20260921`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB；完整 Android 磁盘体积过大，不放入安装包，但项目内置固定版本 Ubuntu 24.04 示例客体盘准备脚本，下载后校验官方 SHA256 并生成客户端可自动识别的 QCOW2 磁盘，再按 [客体镜像文档](./docs/guest-image.md) 完成 Android 客体配置。
+**当前版本：`1.0.20260921`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB；完整 Android 磁盘体积过大（每架构 220–250 MiB，且几乎无法压缩），不放入安装包。首次启动点击界面上的 **Prepare example guest disk** 即可：下载固定版本 Ubuntu 24.04 minimal 镜像、校验官方 SHA256，并生成客户端可自动识别的 QCOW2 磁盘，之后按 [客体镜像文档](./docs/guest-image.md) 完成 Android 客体配置。官方源不可达时自动回退到国内镜像，也可用 **Use a local image** 选择已下载的镜像。
 
 ### 二、平台支持
 
@@ -42,16 +42,20 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 #### 桌面安装包
 
-最近发布的完整版本是 [v1.0.20260920](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260920)，包含四份安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35481871760) 已通过；当前源码版本为 `1.0.20260921`，推送匹配标签后同样需要五个平台构建全部通过才会发布。
+最近发布的完整版本是 [v1.0.20260921](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260921)，包含五平台安装包及 `SHA256SUMS`。当前源码版本为 `1.0.20260921`。
 
 1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
-2. 在源码目录运行 `python scripts/fetch_guest_disk.py` 生成示例客体盘（默认按宿主架构），再按 [客体镜像文档](./docs/guest-image.md) 在虚拟机内完成 Android 客体配置。
-3. 点击启动并选择磁盘，程序自动识别 qcow2/raw 格式并保存选择；与宿主不同架构的客体仍需在设置中选择架构。
+2. 首次打开会提示没有客体磁盘，点击 **Prepare example guest disk**。程序下载官方 Ubuntu 24.04 minimal 镜像、校验 SHA256，并在应用数据目录生成客户端可自动识别的 `androidbox-架构.qcow2`，全程不需要命令行。若所在网络访问官方源失败，可改用 **Use a local image** 选择已下载的同名镜像，校验方式完全相同。
+3. 准备完成后点击 **Start**，程序自动选中刚生成的磁盘并进入运行视图；与宿主不同架构的客体仍需在设置中选择架构。
 4. 启动虚拟机；安装 APK 前，在 Android 中确认 ADB 授权提示。
+
+客体磁盘就绪后，按 [客体镜像文档](./docs/guest-image.md) 在虚拟机内完成 Android 客体配置（安装 Binder 模块、Waydroid 依赖并运行 `guest/provision.sh`）。
+
+下载失败时的处理：准备过程会依次尝试官方源和两个国内镜像，并在三者之间自动重试、支持断点续传；TLS 校验使用安装包内置的 CA 证书，不依赖宿主系统的 OpenSSL 配置。仍失败时，错误框的 Details 会列出每个镜像的原因，可据此改用本地镜像或代理。
 
 日志栏默认收起，可通过工具栏按钮展开。首次启动按宿主架构填写客体架构，CPU 默认取逻辑核心数的一半（1–6 核），内存取总内存的一半并按 GiB 向下取整（1–6 GiB）；无法检测时使用 2 核、2 GiB。已有设置不会被覆盖。性能相关设置还有 CPU 型号（host/max/qemu64）、TCG 线程数（单线程/多线程）和磁盘缓存（writeback/none/unsafe），均可在设置中调整，默认值保持原有行为。
 
-QEMU 和 ARM 固件自动查找，设置中显示检测路径而不把安装位置写死；手动填写的路径优先。首次无配置时，也会查找应用数据目录下 `guests/androidbox-架构.qcow2` 或 `.raw`，其中架构为 `aarch64` 或 `x86_64`。不会扫描任意用户目录；未运行准备脚本时不会自动下载或生成磁盘，运行 `python scripts/fetch_guest_disk.py` 后生成的示例盘会被自动识别。
+QEMU 和 ARM 固件自动查找，设置中显示检测路径而不把安装位置写死；手动填写的路径优先。首次无配置时，也会查找应用数据目录下 `guests/androidbox-架构.qcow2` 或 `.raw`，其中架构为 `aarch64` 或 `x86_64`。不会扫描任意用户目录；只有点击 **Prepare example guest disk** 或 **Use a local image** 时才会下载或生成磁盘，生成的示例盘之后会被自动识别，无需再手动选择。
 
 #### 从源码启动
 

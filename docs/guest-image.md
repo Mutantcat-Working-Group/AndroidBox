@@ -19,6 +19,41 @@ install, then saves the disk to the client settings and switches to the running
 view. The button disappears once a guest disk is present. Use the script below
 when you prefer the terminal or need a specific architecture or output directory.
 
+### How The Download Is Made Reliable
+
+Three details matter on a user's machine, and none of them are obvious from the
+button label.
+
+**The trust store is bundled.** The installer packages whatever OpenSSL its QEMU
+payload pulled in, and that library's compiled-in CA directory (`/opt/homebrew/etc/
+openssl@3` on a Homebrew-built macOS bundle, the MSYS2 path on Windows) does not
+exist on the target machine. `SSL_CTX_set_default_verify_paths()` then finds no CA
+at all and every HTTPS request fails with `unable to get local issuer
+certificate`, which reads like a network problem but is not. The client therefore
+verifies against the `certifi` bundle shipped inside the application, so
+verification never depends on the host's OpenSSL configuration. When the desktop
+extra is not installed, the host trust store is used instead, which is correct for
+a source checkout whose interpreter and OpenSSL come from the same system.
+
+**Mirrors are tried in order.** `cloud-images.ubuntu.com` is slow and has its TLS
+intercepted on some networks, so preparation falls back to
+`mirrors.ustc.edu.cn` and `mirror.nju.edu.cn`. The digest always comes from the
+`SHA256SUMS` manifest, so a mirror can only ever serve the image Ubuntu published;
+a tampered mirror image fails verification and is discarded. Both mirrors publish
+a byte-identical manifest (verified against the official checksum), so the
+verification strength is unchanged.
+
+**A partial download survives.** Transfers are retried with backoff and resume
+from the bytes already written using an HTTP `Range` request, so a dropped
+connection resumes instead of restarting. Only a checksum mismatch discards the
+partial file.
+
+If every mirror fails, the error dialog lists the reason for each one behind a
+Details button. The **Use a local image** button next to Prepare accepts an
+`ubuntu-24.04-minimal-cloudimg-{amd64,arm64}.img` you downloaded yourself; its
+SHA256 is still verified against the official manifest, and it is used to create
+the same managed overlay.
+
 ## Example Guest Disks
 
 Run from the checkout; the architecture defaults to the host:
@@ -85,12 +120,25 @@ when its official checksum matches.
 
 The macOS ARM64 integration run uses Ubuntu 24.04 minimal cloud images with
 NoCloud SSH-key provisioning. `scripts/fetch_guest_disk.py` downloads the matching
-architecture from
-`https://cloud-images.ubuntu.com/minimal/releases/noble/release/`, verifies its
-SHA-256 against that directory's `SHA256SUMS`, and creates the managed QCOW2
-overlay. A mirror download must match the official checksum too. Keep the base
-image if using a QCOW2 overlay; the overlay alone is not a portable, standalone
-disk.
+architecture from `https://cloud-images.ubuntu.com/minimal/releases/noble/release/`,
+verifies its SHA-256 against that directory's `SHA256SUMS`, and creates the managed
+QCOW2 overlay. A mirror download must match the official checksum too. Keep the
+base image if using a QCOW2 overlay; the overlay alone is not a portable,
+standalone disk.
+
+Pinned image sizes (uncompressed, essentially incompressible):
+
+| Architecture | Image | Size |
+| --- | --- | --- |
+| `amd64` | `ubuntu-24.04-minimal-cloudimg-amd64.img` | 252 MiB |
+| `arm64` | `ubuntu-24.04-minimal-cloudimg-arm64.img` | 218 MiB |
+
+Bundling an image in the installers was measured and rejected: each installer
+would roughly double in size (about +1.2 GiB across the five installers), the
+image does not compress (229 MB gzips to 226 MB), and the mirror fallback plus
+the local-image path already cover the offline and restricted-network cases. Use
+**Use a local image** when you have the file, or download it once from a mirror
+and point the client at it.
 
 The tested ARM64 image boots kernel `6.8.0-139-generic`, but does not include its
 Binder module by default. Inside the guest, before running the provisioner:
