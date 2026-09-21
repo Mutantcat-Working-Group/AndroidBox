@@ -15,7 +15,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("'\"$INSTDIR\\Uninstall.exe\" /S'", installer)
 
     def test_source_versions_match_requested_release(self):
-        self.assertEqual(validate_versions(ROOT, "v1.0.20260922"), "1.0.20260922")
+        self.assertEqual(validate_versions(ROOT, "v1.0.20260923"), "1.0.20260923")
 
     def test_mismatched_or_unsafe_tag_is_rejected(self):
         for tag in ("v1.0.20260919", "1.0.20260920", "v1.0.20260920;echo bad"):

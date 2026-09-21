@@ -1,5 +1,14 @@
 ## AndroidBox Desktop Preview
 
+## AndroidBox 1.0.20260923
+
+This release fixes the UEFI Shell boot failure on prepared example disks.
+Ubuntu's minimal cloud `.img` files are QCOW2 containers, and AndroidBox now
+records the real backing format when creating an overlay and repairs an
+existing mismatched overlay before QEMU starts, so the guest reaches GRUB
+instead of the firmware shell. Existing guest disks are patched in place;
+downloads, settings and guest data are preserved.
+
 Logs are collapsed by default. First launch detects host architecture, CPU and
 memory defaults, QEMU and ARM firmware. Select a compatible bootable guest disk
 on first Start; the disk selection is saved for subsequent launches.

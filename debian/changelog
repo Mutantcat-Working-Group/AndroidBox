@@ -1,3 +1,13 @@
+androidbox (1.0.20260923-1) unstable; urgency=medium
+
+  * Fix UEFI Shell boots by writing and repairing the QCOW2 backing format
+    recorded in managed overlays; Ubuntu minimal cloud images are themselves
+    QCOW2 containers despite their .img suffix.
+  * Detect the backing image format when creating an overlay and patch an
+    existing overlay's header in place before QEMU starts.
+
+ -- tyza66 <shun_@outlook.com>  Mon, 21 Sep 2026 13:30:00 +0800
+
 androidbox (1.0.20260922-1) unstable; urgency=medium
 
   * Anchor guest disk downloads to the bundled CA store, fixing the
