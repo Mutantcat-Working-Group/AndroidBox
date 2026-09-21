@@ -17,6 +17,7 @@ from androidbox import guestdisk
 
 
 QT_AVAILABLE = importlib.util.find_spec("PySide6") is not None
+CERTIFI_AVAILABLE = importlib.util.find_spec("certifi") is not None
 
 
 class OverlayWriterTests(unittest.TestCase):
@@ -202,6 +203,7 @@ class TrustStoreTests(unittest.TestCase):
 
         return captured, capture
 
+    @unittest.skipUnless(CERTIFI_AVAILABLE, "Install the desktop extra to bundle a CA store")
     def test_context_trusts_the_bundled_ca_bundle(self):
         import certifi
         captured, capture = self._captured_context_kwargs()
