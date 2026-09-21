@@ -79,17 +79,39 @@ class SeedTests(unittest.TestCase):
                          "      line one\n\n        indented\n      line four")
 
     def test_user_data_firstboot_script_survives_parsing(self):
-        import yaml
-        config = yaml.safe_load(seed.user_data())
-        entries = {entry["path"]: entry["content"] for entry in config["write_files"]}
-        firstboot = entries["/usr/local/bin/androidbox-firstboot"]
-        self.assertTrue(firstboot.startswith("#!/bin/bash\n"))
-        self.assertIn("\n", firstboot)
-        self.assertIn('echo_progress "AndroidBox first boot: starting provisioning..."\n',
-                      firstboot)
-        self.assertIn("bash /opt/androidbox-src/androidbox/guest/provision.sh "
-                      "--dedicated-guest", firstboot)
-        self.assertIn("/usr/local/bin/androidbox-firstboot", config["runcmd"][-1])
+        # Reproduce cloud-init's literal-block rules without importing a YAML
+        # parser: every content line carries the indent, blank lines are blank.
+        lines = self.user_data_lines()
+        entry = next(i for i, line in enumerate(lines)
+                     if line == "  - path: /usr/local/bin/androidbox-firstboot")
+        scalar = next(i for i in range(entry, len(lines))
+                      if lines[i].strip() == "content: |")
+        block = []
+        for line in lines[scalar + 1:]:
+            if line.strip() and not line.startswith(" " * 6):
+                break
+            block.append(line[6:] if line else "")
+        # The block scalar represents the script verbatim, including its final
+        # newline, which splitlines() drops from the trailing empty line.
+        self.assertEqual("\n".join(block) + "\n", seed.firstboot_script())
+        runcmd = self.runcmd_items(lines)
+        self.assertEqual(runcmd, ["[ systemctl, daemon-reload ]",
+                                  "[ systemctl, restart, getty@tty1.service ]",
+                                  "[ /usr/local/bin/androidbox-firstboot ]"])
+
+    @staticmethod
+    def user_data_lines():
+        return seed.user_data().splitlines()
+
+    @staticmethod
+    def runcmd_items(lines):
+        items = []
+        for line in lines[lines.index("runcmd:") + 1:]:
+            if line.strip() and not line.startswith("  "):
+                break
+            if line.startswith("  - "):
+                items.append(line[4:].strip())
+        return items
 
 
 if __name__ == "__main__":
