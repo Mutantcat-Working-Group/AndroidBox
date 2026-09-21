@@ -61,6 +61,12 @@ def managed_disk_path(arch, directory=None):
     return (Path(directory) if directory else state_directory() / "guests") / managed_disk_name(arch)
 
 
+def probe_format(path):
+    """Return ``qcow2`` or ``raw`` from the header magic of path."""
+    with Path(path).open("rb") as stream:
+        return "qcow2" if stream.read(4) == QCOW2_MAGIC else "raw"
+
+
 def parse_size(value):
     text = str(value).strip().upper()
     factor = 1
@@ -224,8 +230,10 @@ def ensure_base_image(target, expected, local=None, progress=None):
                      "yourself and pick it with 'Use a local image':\n" + "\n".join(errors))
 
 
-def write_overlay(path, backing_name, virtual_size):
+def write_overlay(path, backing_name, virtual_size, backing_format="raw"):
     """Write an empty QCOW2 overlay whose reads fall through to backing_name."""
+    if backing_format not in {"raw", "qcow2"}:
+        raise ValueError(f"Unsupported backing format: {backing_format}")
     cluster_size = 1 << CLUSTER_BITS
     l2_entries = cluster_size // 8
     l1_size = max(1, -(-virtual_size // (cluster_size * l2_entries)))
@@ -245,7 +253,8 @@ def write_overlay(path, backing_name, virtual_size):
                      CLUSTER_BITS, virtual_size, 0, l1_size, l1_table_offset,
                      refcount_table_offset, 1, 0, 0, 0, 0, 0,
                      REFCOUNT_ORDER, HEADER_LENGTH)
-    extension = struct.pack(">II", BACKING_FORMAT_EXTENSION, 3) + b"raw".ljust(8, b"\0")
+    extension = (struct.pack(">II", BACKING_FORMAT_EXTENSION, len(backing_format))
+                 + backing_format.encode().ljust(8, b"\0"))
     refcount_block = bytearray(cluster_size)
     struct.pack_into(">4H", refcount_block, 0, 1, 1, 1, 1)
     refcount_table = bytearray(cluster_size)
@@ -267,8 +276,61 @@ def create_overlay(overlay, backing, size=DEFAULT_DISK_SIZE):
         return overlay
     if not backing.is_file():
         raise ValueError(f"Backing image does not exist: {backing}")
-    write_overlay(overlay, backing.name, parse_size(size))
+    write_overlay(overlay, backing.name, parse_size(size), probe_format(backing))
     return overlay
+
+
+def overlay_backing_format(path):
+    """Return the backing-format name recorded in an overlay header, or None."""
+    with Path(path).open("rb") as stream:
+        header = stream.read(HEADER_LENGTH + 16)
+    if header[:4] != QCOW2_MAGIC:
+        return None
+    extension_type, extension_length = struct.unpack_from(">II", header, HEADER_LENGTH)
+    if extension_type != BACKING_FORMAT_EXTENSION:
+        return None
+    return header[HEADER_LENGTH + 8: HEADER_LENGTH + 8 + extension_length].decode("ascii", errors="replace")
+
+
+def repair_overlay_backing_format(overlay):
+    """Patch a mismatched backing-format name in place; return True when patched.
+
+    Ubuntu publishes some minimal cloud ``.img`` files as QCOW2 containers, so an
+    overlay that declares a raw backing would present the container header as a
+    raw disk and never reach the bootloader. Only the header extension changes;
+    guest writes inside the overlay are preserved.
+    """
+    overlay = Path(overlay)
+    if not overlay.is_file():
+        return False
+    try:
+        with overlay.open("rb") as stream:
+            header = stream.read(HEADER_LENGTH + 16)
+        if header[:4] != QCOW2_MAGIC:
+            return False
+        backing_offset, backing_length = struct.unpack_from(">QI", header, 8)
+        if not backing_length:
+            return False
+        extension_type, extension_length = struct.unpack_from(">II", header, HEADER_LENGTH)
+        if extension_type != BACKING_FORMAT_EXTENSION:
+            return False
+        declared = header[HEADER_LENGTH + 8: HEADER_LENGTH + 8 + extension_length].decode("ascii", errors="replace")
+        with overlay.open("rb") as stream:
+            stream.seek(backing_offset)
+            backing_name = stream.read(backing_length).decode("utf-8", errors="replace")
+        backing = overlay.parent / backing_name
+        if not backing.is_file():
+            return False
+        actual = probe_format(backing)
+        if declared == actual:
+            return False
+        with overlay.open("r+b") as stream:
+            stream.seek(HEADER_LENGTH)
+            stream.write(struct.pack(">II", BACKING_FORMAT_EXTENSION, len(actual)))
+            stream.write(actual.encode().ljust(8, b"\0"))
+        return True
+    except (OSError, struct.error, UnicodeError):
+        return False
 
 
 def prepare(arch, directory=None, size=DEFAULT_DISK_SIZE, local_image=None, dry_run=False, progress=None):
@@ -277,6 +339,7 @@ def prepare(arch, directory=None, size=DEFAULT_DISK_SIZE, local_image=None, dry_
     directory = Path(directory) if directory else state_directory() / "guests"
     overlay = directory / managed_disk_name(arch)
     if overlay.is_file():
+        repair_overlay_backing_format(overlay)
         return overlay
     remote_name = image_remote_name(arch)
     checksums, checksum_url = remote_checksums()

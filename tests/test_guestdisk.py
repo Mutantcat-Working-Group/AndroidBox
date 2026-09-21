@@ -62,6 +62,57 @@ class OverlayWriterTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from(">I", data, 36)[0], 1)
         self.assertEqual(len(data), 3 * 65536 + 8)
 
+    def test_overlay_backing_format_reads_the_extension(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "base.img"
+            base.write_bytes(b"\0" * 4096)
+            overlay = Path(directory) / "o.qcow2"
+            guestdisk.write_overlay(overlay, base.name, 1024 ** 2)
+            self.assertEqual(guestdisk.overlay_backing_format(overlay), "raw")
+
+    def test_create_overlay_records_qcow2_backing_format(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "cloudimg-arm64.img"
+            base.write_bytes(b"QFI\xfb" + b"\0" * 4092)
+            overlay = Path(directory) / "androidbox-aarch64.qcow2"
+            guestdisk.create_overlay(overlay, base)
+            self.assertEqual(guestdisk.overlay_backing_format(overlay), "qcow2")
+
+    def test_repair_patches_a_mismatched_backing_format_in_place(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "cloudimg-arm64.img"
+            base.write_bytes(b"QFI\xfb" + b"\0" * 4092)
+            overlay = Path(directory) / "androidbox-aarch64.qcow2"
+            guestdisk.write_overlay(overlay, base.name, 32 * 1024 ** 3, backing_format="raw")
+            before = overlay.read_bytes()
+            self.assertEqual(guestdisk.overlay_backing_format(overlay), "raw")
+            self.assertTrue(guestdisk.repair_overlay_backing_format(overlay))
+            after = overlay.read_bytes()
+            self.assertEqual(guestdisk.overlay_backing_format(overlay), "qcow2")
+            # Only the header extension changes; the data area is untouched.
+            self.assertEqual(after[3 * 65536:], before[3 * 65536:])
+
+    def test_repair_is_a_noop_when_the_backing_format_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "base.img"
+            base.write_bytes(b"\0" * 4096)
+            overlay = Path(directory) / "o.qcow2"
+            guestdisk.write_overlay(overlay, base.name, 1024 ** 2)
+            self.assertFalse(guestdisk.repair_overlay_backing_format(overlay))
+            self.assertEqual(guestdisk.overlay_backing_format(overlay), "raw")
+
+    def test_repair_skips_a_standalone_qcow2(self):
+        with tempfile.TemporaryDirectory() as directory:
+            overlay = Path(directory) / "standalone.qcow2"
+            guestdisk.write_overlay(overlay, "", 1024 ** 2)
+            self.assertFalse(guestdisk.repair_overlay_backing_format(overlay))
+
+    def test_repair_skips_a_missing_backing_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            overlay = Path(directory) / "o.qcow2"
+            guestdisk.write_overlay(overlay, "missing.img", 1024 ** 2)
+            self.assertFalse(guestdisk.repair_overlay_backing_format(overlay))
+
     def test_create_overlay_requires_the_backing_file(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
@@ -282,6 +333,16 @@ class PrepareTests(unittest.TestCase):
             with patch.object(guestdisk, "remote_checksums", side_effect=AssertionError("network")):
                 self.assertEqual(guestdisk.prepare("arm64", directory), overlay)
 
+    def test_prepare_repairs_an_existing_mismatched_overlay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / guestdisk.image_remote_name("aarch64")
+            base.write_bytes(b"QFI\xfb" + b"\0" * 4092)
+            overlay = Path(directory) / "androidbox-aarch64.qcow2"
+            guestdisk.write_overlay(overlay, base.name, 32 * 1024 ** 3, backing_format="raw")
+            with patch.object(guestdisk, "remote_checksums", side_effect=AssertionError("network")):
+                self.assertEqual(guestdisk.prepare("aarch64", directory), overlay)
+            self.assertEqual(guestdisk.overlay_backing_format(overlay), "qcow2")
+
     def test_prepare_local_image_creates_a_pointing_overlay(self):
         import hashlib
         with tempfile.TemporaryDirectory() as directory:
@@ -335,6 +396,7 @@ class PrepareFlowTests(unittest.TestCase):
         application = QApplication.instance() or QApplication([])
         with tempfile.TemporaryDirectory() as directory, \
                 patch("androidbox.desktop.state_directory", return_value=Path(directory)), \
+                patch("androidbox.guestdisk.state_directory", return_value=Path(directory)), \
                 patch("androidbox.runtime.state_directory", return_value=Path(directory)), \
                 patch("androidbox.desktop.QMessageBox.warning"):
             overlay = Path(directory) / "guests" / guestdisk.managed_disk_name("aarch64")
@@ -371,6 +433,7 @@ class PrepareFlowTests(unittest.TestCase):
         application = QApplication.instance() or QApplication([])
         with tempfile.TemporaryDirectory() as directory, \
                 patch("androidbox.desktop.state_directory", return_value=Path(directory)), \
+                patch("androidbox.guestdisk.state_directory", return_value=Path(directory)), \
                 patch("androidbox.runtime.state_directory", return_value=Path(directory)), \
                 patch("androidbox.desktop.QMessageBox.warning"):
             overlay = Path(directory) / "guests" / guestdisk.managed_disk_name("x86_64")
@@ -415,6 +478,7 @@ class PrepareFlowTests(unittest.TestCase):
         application = QApplication.instance() or QApplication([])
         with tempfile.TemporaryDirectory() as directory, \
                 patch("androidbox.desktop.state_directory", return_value=Path(directory)), \
+                patch("androidbox.guestdisk.state_directory", return_value=Path(directory)), \
                 patch("androidbox.runtime.state_directory", return_value=Path(directory)), \
                 patch("androidbox.desktop.QMessageBox.warning"):
             class CancelledDialog:

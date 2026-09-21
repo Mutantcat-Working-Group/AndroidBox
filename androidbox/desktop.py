@@ -387,6 +387,10 @@ class MainWindow(QMainWindow):
                 return
         try:
             self.config.validate()
+            try:
+                guestdisk.repair_overlay_backing_format(Path(self.config.disk))
+            except OSError as error:
+                raise ValueError(f"Could not repair the guest disk header: {error}") from error
             self.server = DisplayServer()
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, APP_NAME, str(error))
