@@ -680,3 +680,23 @@ virtual console while images download. The `runcmd` now runs
 drop-in takes effect and the default password `androidbox` works on the `ubuntu`
 account. Failures now surface on the console with a `FAILED:` prefix and a
 pointer to the full log at `/var/log/androidbox-firstboot.log`.
+
+## Published Release 1.0.20260926 (2026-09-22)
+
+Tag `v1.0.20260926` fixes the regression that made release 1.0.20260925 land on
+a bare `ubuntu@androidbox:~$` prompt. Root cause: `seed._indent` joined the
+first-boot script's lines with `""` instead of newlines when embedding it in the
+cloud-config block scalar, so the guest received a single-line file starting
+`#!/bin/bash   # Install ...`. Bash treated the entire script as one comment,
+the first-boot script exited 0 without doing anything, and no `.provisioning`
+marker ever appeared. `write_files` still ran (which is why autologin worked),
+but `runcmd`'s provisioning step was a silent no-op.
+
+The indenter now keeps the line structure (`"\n".join`), cloud-init writes the
+real 82-line script to `/usr/local/bin/androidbox-firstboot`, and the guest runs
+it on every boot via `runcmd` until `.provisioned` exists. Progress messages are
+written to both `/dev/console` and `/dev/tty1` because the launcher runs QEMU
+with `-serial none`; the Ubuntu cloud image's `console=ttyS0` would otherwise
+discard them. A regression test (`tests/test_seed.py`) parses the generated
+`user_data` YAML and asserts the script survives the block scalar with its line
+breaks intact.

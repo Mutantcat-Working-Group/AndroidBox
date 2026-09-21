@@ -74,6 +74,23 @@ class SeedTests(unittest.TestCase):
         self.assertIn(f"password: {seed.DEFAULT_PASSWORD}", user_data)
         self.assertIn(f"echo 'ubuntu:{seed.DEFAULT_PASSWORD}' | chpasswd", user_data)
 
+    def test_indent_keeps_block_scalar_line_structure(self):
+        self.assertEqual(seed._indent("line one\n\n  indented\nline four", 6),
+                         "      line one\n\n        indented\n      line four")
+
+    def test_user_data_firstboot_script_survives_parsing(self):
+        import yaml
+        config = yaml.safe_load(seed.user_data())
+        entries = {entry["path"]: entry["content"] for entry in config["write_files"]}
+        firstboot = entries["/usr/local/bin/androidbox-firstboot"]
+        self.assertTrue(firstboot.startswith("#!/bin/bash\n"))
+        self.assertIn("\n", firstboot)
+        self.assertIn('echo_progress "AndroidBox first boot: starting provisioning..."\n',
+                      firstboot)
+        self.assertIn("bash /opt/androidbox-src/androidbox/guest/provision.sh "
+                      "--dedicated-guest", firstboot)
+        self.assertIn("/usr/local/bin/androidbox-firstboot", config["runcmd"][-1])
+
 
 if __name__ == "__main__":
     unittest.main()

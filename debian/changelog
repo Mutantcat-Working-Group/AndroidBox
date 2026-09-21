@@ -1,3 +1,15 @@
+androidbox (1.0.20260926-1) unstable; urgency=medium
+
+  * Fix the first-boot provisioning script embedded in the NoCloud seed: the
+    block-scalar indenter joined the script's lines without newlines, so the
+    file written to the guest was a single comment line and cloud-init's
+    runcmd exited silently. The guest now actually runs provisioning.
+  * Mirror first-boot progress to /dev/tty1 in addition to /dev/console so the
+    messages are visible on the console Qt attaches to (no serial console).
+  * Add a regression test covering block-scalar line structure in user-data.
+
+ -- tyza66 <shun_@outlook.com>  Tue, 22 Sep 2026 15:00:00 +0800
+
 androidbox (1.0.20260925-1) unstable; urgency=medium
 
   * Attach a NoCloud cidata seed to managed guest disks so first boot logs in

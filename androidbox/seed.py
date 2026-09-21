@@ -57,8 +57,10 @@ def meta_data(arch):
 
 def _indent(text, spaces):
     padding = " " * spaces
-    return "".join(padding + line if line.strip() else padding + line
-                   for line in text.splitlines())
+    # Block scalars need every line padded; blank lines stay blank so YAML does
+    # not treat the padding as significant whitespace inside the literal block.
+    return "\n".join(padding + line if line.strip() else ""
+                     for line in text.splitlines())
 
 
 def user_data():
@@ -132,10 +134,12 @@ tty=/dev/console
 echo_progress() {{
     echo "[androidbox-firstboot] $*"
     echo "$*" > "$tty" 2>/dev/null || true
+    echo "$*" > /dev/tty1 2>/dev/null || true
 }}
 fail() {{
     echo "[androidbox-firstboot] FAILED: $*"
     echo "FAILED: $* See /var/log/androidbox-firstboot.log" > "$tty" 2>/dev/null || true
+    echo "FAILED: $* See /var/log/androidbox-firstboot.log" > /dev/tty1 2>/dev/null || true
     rm -f "$state/.provisioning"
     exit 1
 }}
