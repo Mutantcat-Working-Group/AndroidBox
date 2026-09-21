@@ -700,3 +700,28 @@ with `-serial none`; the Ubuntu cloud image's `console=ttyS0` would otherwise
 discard them. A regression test (`tests/test_seed.py`) parses the generated
 `user_data` YAML and asserts the script survives the block scalar with its line
 breaks intact.
+
+## Published Release 1.0.20260927 (2026-09-23)
+
+Tag `v1.0.20260927` addresses the case where a fixed seed still landed the guest
+on `ubuntu@androidbox:~$`. Two facts line up against cloud-init semantics:
+
+1. `runcmd` belongs to cloud-init's per-instance set, so it only runs when the
+   NoCloud `instance-id` changes. `meta-data` emitted a version-less
+   `androidbox-{arch}`, so a disk that had already booted once kept the result
+   of its first (broken) provisioning sequence forever. `instance-id` now
+   carries the seed version, and every app version refreshes the whole
+   sequence. The test `test_write_seed_changes_instance_id_with_version` pins
+   that.
+2. `runcmd` also re-ran `systemctl restart getty@tty1.service` on the earlier
+   boot, which is exactly why autologin kept working while provisioning stayed
+   dead -- a red herring that made the bug look like "the script ran but did
+   nothing".
+
+`write_files` now installs `/etc/systemd/system/androidbox-firstboot.service`
+(Type=oneshot, `ConditionPathExists=!/var/lib/androidbox/.provisioned`,
+`WantedBy=multi-user.target`) and runcmd only enables it. That gives one
+executor per boot, retries automatically when a download fails, and leaves the
+older `runcmd -> script` path behind. The literal-block round trip is covered by
+`test_user_data_firstboot_script_survives_parsing`, which now also asserts the
+unit file and the enable command.

@@ -51,8 +51,17 @@ def payload_root():
     return Path(__file__).resolve().parent.parent
 
 
-def meta_data(arch):
-    return f"instance-id: androidbox-{arch}\nlocal-hostname: androidbox\n"
+def meta_data(arch, version=None):
+    """Return the NoCloud meta-data for a guest disk.
+
+    The instance-id carries the seed version on purpose: cloud-init only
+    re-runs per-instance modules (``write_files``, ``runcmd``, ...) when the
+    instance-id changes. A version-less id keeps the old, possibly broken
+    first-boot result frozen on disks that have booted before, so every seed
+    refresh restarts the cloud-init sequence.
+    """
+    version = version or __version__
+    return f"instance-id: androidbox-{arch}-{version}\nlocal-hostname: androidbox\n"
 
 
 def _indent(text, spaces):
@@ -63,8 +72,9 @@ def _indent(text, spaces):
                      for line in text.splitlines())
 
 
-def user_data():
+def user_data(version=None):
     """Return the cloud-config that logs in and provisions the first boot."""
+    version = version or __version__
     return f"""#cloud-config
 hostname: androidbox
 manage_etc_hosts: true
@@ -117,10 +127,29 @@ write_files:
     owner: root:root
     content: |
 {_indent(firstboot_script(), 6)}
+
+  - path: /etc/systemd/system/androidbox-firstboot.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=AndroidBox first-boot guest provisioning
+      After=network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/var/lib/androidbox/.provisioned
+      StartLimitIntervalSec=0
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/androidbox-firstboot
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
 runcmd:
   - [ systemctl, daemon-reload ]
   - [ systemctl, restart, getty@tty1.service ]
-  - [ /usr/local/bin/androidbox-firstboot ]
+  - [ systemctl, enable, --now, androidbox-firstboot.service ]
 """
 
 
@@ -256,8 +285,8 @@ def write_seed(path, arch, version=None, root=None):
         archive = write_payload_archive(Path(directory) / PAYLOAD_ARCHIVE, root)
         payload = archive.read_bytes()
     write_iso(path, [
-        ("meta-data", meta_data(arch).encode("utf-8")),
-        ("user-data", user_data().encode("utf-8")),
+        ("meta-data", meta_data(arch, version).encode("utf-8")),
+        ("user-data", user_data(version).encode("utf-8")),
         (PAYLOAD_ARCHIVE, payload),
         (VERSION_FILE, f"{version}\n".encode("utf-8")),
     ])

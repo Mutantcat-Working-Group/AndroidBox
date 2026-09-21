@@ -1,3 +1,15 @@
+androidbox (1.0.20260927-1) unstable; urgency=medium
+
+  * Carry the seed version in the NoCloud instance-id so cloud-init re-runs its
+    per-instance modules (write_files, runcmd) when the seed changes. Identity
+    stayed constant before, so disks that had already booted once kept the old
+    first-boot result and never re-provisioned.
+  * Install the in-guest first-boot provisioner as an oneshot systemd service
+    instead of a bare runcmd entry, so a failed or partial provisioning retries
+    on every boot until it succeeds, and progress stays on the console.
+
+ -- tyza66 <shun_@outlook.com>  Wed, 23 Sep 2026 09:00:00 +0800
+
 androidbox (1.0.20260926-1) unstable; urgency=medium
 
   * Fix the first-boot provisioning script embedded in the NoCloud seed: the
