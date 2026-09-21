@@ -193,9 +193,13 @@ if [[ ! -b $seed ]]; then
 fi
 mkdir -p /mnt/androidbox-seed
 mountpoint -q /mnt/androidbox-seed || mount -o ro "$seed" /mnt/androidbox-seed
+# A plain ISO9660 mount may upper-case names depending on mount options, so
+# resolve the payload case-insensitively instead of hard-coding it.
+payload=$(find /mnt/androidbox-seed -maxdepth 1 -iname '{PAYLOAD_ARCHIVE}' | head -n 1)
+[[ -n $payload ]] || fail "payload {PAYLOAD_ARCHIVE} missing from the seed"
 rm -rf /opt/androidbox-src
 mkdir -p /opt/androidbox-src
-tar -xzf /mnt/androidbox-seed/{PAYLOAD_ARCHIVE} -C /opt/androidbox-src || fail "failed to extract payload"
+tar -xzf "$payload" -C /opt/androidbox-src || fail "failed to extract payload"
 
 echo_progress "Downloading and installing Android (this takes several minutes)..."
 bash /opt/androidbox-src/{PAYLOAD_DIRECTORY}/guest/provision.sh --dedicated-guest || fail "provision.sh failed"
