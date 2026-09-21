@@ -1,4 +1,4 @@
-androidbox (1.0.20260924-1) unstable; urgency=medium
+androidbox (1.0.20260925-1) unstable; urgency=medium
 
   * Attach a NoCloud cidata seed to managed guest disks so first boot logs in
     automatically and provisions the Android guest without manual steps.
