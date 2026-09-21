@@ -599,6 +599,28 @@ MB gzips to 226 MB), so each installer would roughly double in size for about
 +1.2 GiB across the five installers. The mirror fallback and the local-image path
 cover the restricted-network and offline cases at no size cost.
 
+## Published Release 1.0.20260923 (2026-09-21)
+
+Tag `v1.0.20260923` points at `806b0b9`. Run
+[35565520650](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35565520650)
+passed all seven jobs: `validate`, the five platform builds and `release`. The
+published release carries the ten installers plus `SHA256SUMS`.
+
+| Asset | Size |
+| --- | --- |
+| `AndroidBox-1.0.20260923-Windows-x86_64-Setup.exe` | 214 MiB |
+| `AndroidBox-1.0.20260923-macOS-arm64.dmg` | 258 MiB |
+| `AndroidBox-1.0.20260923-macOS-x86_64.dmg` | 263 MiB |
+| `AndroidBox-1.0.20260923-Linux-x86_64.AppImage` | 224 MiB |
+| `AndroidBox-1.0.20260923-Linux-aarch64.AppImage` | 218 MiB |
+
+Each platform also ships a portable `tar.gz` alongside its installer. This
+release records the QCOW2 backing format of Ubuntu minimal cloud images when
+creating an overlay and repairs a mismatched header in place before QEMU
+starts, so prepared example disks boot into the guest instead of the UEFI
+Shell. The repaired overlay on the local ARM64 host booted Ubuntu 24.04 to the
+serial login prompt in a headless HVF run.
+
 ## Published Release 1.0.20260922 (2026-09-21)
 
 Tag `v1.0.20260922` points at `4f859bd`. Run

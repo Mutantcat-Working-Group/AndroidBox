@@ -42,7 +42,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 #### 桌面安装包
 
-最近发布的完整版本是 [v1.0.20260922](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260922)，包含五平台安装包及 `SHA256SUMS`。当前源码版本为 `1.0.20260923`，推送匹配标签后同样需要五个平台构建全部通过才会发布。
+最近发布的完整版本是 [v1.0.20260923](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260923)，包含五平台安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35565520650) 已通过；当前源码版本为 `1.0.20260923`。
 
 1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
 2. 首次打开会提示没有客体磁盘，点击 **Prepare example guest disk**。程序下载官方 Ubuntu 24.04 minimal 镜像、校验 SHA256，并在应用数据目录生成客户端可自动识别的 `androidbox-架构.qcow2`，全程不需要命令行。若所在网络访问官方源失败，可改用 **Use a local image** 选择已下载的同名镜像，校验方式完全相同。
