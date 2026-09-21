@@ -594,3 +594,31 @@ The image is effectively incompressible (229,113,856 bytes gzip to 225,597,382),
 so shipping one inside each installer would roughly double installer size, about
 +1.2 GiB across the five installers. The mirror fallback and the local-image path
 cover the restricted-network and offline cases at no size cost.
+Bundling an image was measured and rejected: it is effectively incompressible (229
+MB gzips to 226 MB), so each installer would roughly double in size for about
++1.2 GiB across the five installers. The mirror fallback and the local-image path
+cover the restricted-network and offline cases at no size cost.
+
+## Published Release 1.0.20260922 (2026-09-21)
+
+Tag `v1.0.20260922` points at `4f859bd`. Run
+[35550816996](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35550816996)
+passed all seven jobs: `validate`, the five platform builds and `release`. The
+published release carries the ten installers plus `SHA256SUMS`.
+
+| Asset | Size |
+| --- | --- |
+| `AndroidBox-1.0.20260922-Windows-x86_64-Setup.exe` | 214 MiB |
+| `AndroidBox-1.0.20260922-macOS-arm64.dmg` | 257 MiB |
+| `AndroidBox-1.0.20260922-macOS-x86_64.dmg` | 264 MiB |
+| `AndroidBox-1.0.20260922-Linux-x86_64.AppImage` | 224 MiB |
+| `AndroidBox-1.0.20260922-Linux-aarch64.AppImage` | 218 MiB |
+
+Each platform also ships a portable `tar.gz` alongside its installer. The two
+macOS images grew by roughly 5-7 MiB against 1.0.20260921, which is the bundled
+`certifi` CA store plus the local-image dialog.
+
+The two macOS builds spent about 25 minutes queued for a runner before
+executing, inside the 45 minute job timeout, so the release took roughly 40
+minutes end to end. The queue wait is GitHub runner capacity, not a build
+regression.
