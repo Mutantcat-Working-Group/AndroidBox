@@ -668,3 +668,15 @@ The two macOS builds spent about 25 minutes queued for a runner before
 executing, inside the 45 minute job timeout, so the release took roughly 40
 minutes end to end. The queue wait is GitHub runner capacity, not a build
 regression.
+
+## Published Release 1.0.20260925 (2026-09-21)
+
+Tag `v1.0.20260925` points at the commit that fixes first-boot provisioning
+visibility: the in-guest `androidbox-firstboot` script now writes progress to
+`/dev/console` (which the VNC display shows) instead of only to a log file, so
+the user sees "Downloading and installing Android..." and similar messages on the
+virtual console while images download. The `runcmd` now runs
+`systemctl daemon-reload` and `restart getty@tty1.service` so the autologin
+drop-in takes effect and the default password `androidbox` works on the `ubuntu`
+account. Failures now surface on the console with a `FAILED:` prefix and a
+pointer to the full log at `/var/log/androidbox-firstboot.log`.

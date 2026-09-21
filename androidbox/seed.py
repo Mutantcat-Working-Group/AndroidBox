@@ -99,8 +99,15 @@ write_files:
     content: |
       # Report first-boot progress on the console login shell.
       if [ -e /var/lib/androidbox/.provisioning ] && [ -r /var/log/androidbox-firstboot.log ]; then
-          echo "AndroidBox is installing the Android guest on first boot."
-          echo "Follow the progress with: tail -f /var/log/androidbox-firstboot.log"
+          echo ""
+          echo "=========================================="
+          echo " AndroidBox is installing the Android guest"
+          echo " on first boot. This downloads system images"
+          echo " and can take several minutes."
+          echo ""
+          echo " Progress: tail -f /var/log/androidbox-firstboot.log"
+          echo "=========================================="
+          echo ""
       fi
 
   - path: /usr/local/bin/androidbox-firstboot
@@ -109,7 +116,8 @@ write_files:
     content: |
 {_indent(firstboot_script(), 6)}
 runcmd:
-  - [ systemctl, enable, --now, getty@tty1.service ]
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, restart, getty@tty1.service ]
   - [ /usr/local/bin/androidbox-firstboot ]
 """
 
@@ -118,8 +126,19 @@ def firstboot_script():
     """Return the one-shot in-guest provisioning script."""
     return f"""#!/bin/bash
 # Install the AndroidBox Android guest on first boot; runs once, then reboots.
-set -ux
+set -u
 exec >>/var/log/androidbox-firstboot.log 2>&1
+tty=/dev/console
+echo_progress() {{
+    echo "[androidbox-firstboot] $*"
+    echo "$*" > "$tty" 2>/dev/null || true
+}}
+fail() {{
+    echo "[androidbox-firstboot] FAILED: $*"
+    echo "FAILED: $* See /var/log/androidbox-firstboot.log" > "$tty" 2>/dev/null || true
+    rm -f "$state/.provisioning"
+    exit 1
+}}
 
 state=/var/lib/androidbox
 if [[ -e $state/.provisioned ]]; then
@@ -130,29 +149,29 @@ touch "$state/.provisioning"
 export DEBIAN_FRONTEND=noninteractive
 
 log() {{ echo "[androidbox-firstboot] $*"; }}
+echo_progress "AndroidBox first boot: starting provisioning..."
 
 # The console password must work even if a cloud-init release ignores the
 # chpasswd schema used above.
 echo 'ubuntu:{DEFAULT_PASSWORD}' | chpasswd
 
 # cloud-init can reach the final stage before DNS is usable.
-for _ in $(seq 1 30); do
+echo_progress "Waiting for network..."
+for _ in $(seq 1 60); do
     getent hosts archive.ubuntu.com >/dev/null 2>&1 && break
     sleep 2
 done
 
 # Binder is a module of the generic kernel; the minimal cloud image ships the
 # kernel without its extra modules.
+echo_progress "Setting up binder kernel module..."
 if ! modprobe binder_linux devices=binder,hwbinder,vndbinder 2>/dev/null; then
-    log "installing binder modules for $(uname -r)"
+    echo_progress "Installing binder modules (this may take a minute)..."
     apt-get update
     apt-get install -y "linux-modules-extra-$(uname -r)" || true
     if ! modprobe binder_linux devices=binder,hwbinder,vndbinder 2>/dev/null; then
         if [[ -e $state/.kernel-reboot ]]; then
-            log "binder is still missing after the kernel reboot"
-            log "install a kernel with CONFIG_ANDROID_BINDER_IPC, then reboot"
-            rm -f "$state/.provisioning"
-            exit 1
+            fail "binder module still missing after kernel reboot"
         fi
         log "installing the generic kernel for binder support"
         apt-get install -y linux-image-generic || true
@@ -163,22 +182,22 @@ if ! modprobe binder_linux devices=binder,hwbinder,vndbinder 2>/dev/null; then
 fi
 
 # The seed is a read-only ISO; copy the AndroidBox payload out of it.
+echo_progress "Extracting AndroidBox payload..."
 seed=/dev/disk/by-label/{SEED_LABEL}
 if [[ ! -b $seed ]]; then
-    log "no {SEED_LABEL} seed device is attached"
-    rm -f "$state/.provisioning"
-    exit 1
+    fail "no {SEED_LABEL} seed device attached"
 fi
 mkdir -p /mnt/androidbox-seed
 mountpoint -q /mnt/androidbox-seed || mount -o ro "$seed" /mnt/androidbox-seed
 rm -rf /opt/androidbox-src
 mkdir -p /opt/androidbox-src
-tar -xzf /mnt/androidbox-seed/{PAYLOAD_ARCHIVE} -C /opt/androidbox-src
+tar -xzf /mnt/androidbox-seed/{PAYLOAD_ARCHIVE} -C /opt/androidbox-src || fail "failed to extract payload"
 
-log "provisioning the AndroidBox guest (this downloads the Android images)"
-bash /opt/androidbox-src/{PAYLOAD_DIRECTORY}/guest/provision.sh --dedicated-guest
+echo_progress "Downloading and installing Android (this takes several minutes)..."
+bash /opt/androidbox-src/{PAYLOAD_DIRECTORY}/guest/provision.sh --dedicated-guest || fail "provision.sh failed"
 
 # greetd takes over the virtual console from the automatic login shell.
+echo_progress "Android installed; rebooting into Android session..."
 systemctl disable --now getty@tty1.service || true
 touch "$state/.provisioned"
 rm -f "$state/.provisioning"
