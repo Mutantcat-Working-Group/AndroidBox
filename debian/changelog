@@ -1,3 +1,14 @@
+androidbox (1.0.20260922-1) unstable; urgency=medium
+
+  * Anchor guest disk downloads to the bundled CA store, fixing the
+    certificate verification failure on machines without the build host's
+    OpenSSL configuration.
+  * Fall back to the USTC and NJU Ubuntu mirrors, retry with backoff and
+    resume partial transfers when preparing a guest disk.
+  * Add a local cloud image entry point for restricted networks.
+
+ -- tyza66 <shun_@outlook.com>  Mon, 21 Sep 2026 09:22:00 +0800
+
 androidbox (1.0.20260921-1) unstable; urgency=medium
 
   * Add verified Ubuntu 24.04 example guest disk preparation tool.
