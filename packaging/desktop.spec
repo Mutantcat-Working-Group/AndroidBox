@@ -50,7 +50,11 @@ analysis = Analysis(
     # certifi ships the CA bundle the guest disk download verifies against: the
     # QEMU payload pulls in an OpenSSL whose compiled-in CA directory does not
     # exist on the user's machine.
+    # The seed ISO also needs the in-guest provisioning payload beside the
+    # frozen bundle so first boot can install the Android container.
     datas=collect_data_files("androidbox") + collect_data_files("certifi")
+    + [(str(root / entry), entry) for entry in
+       ("Makefile", "androidbox.py", "guest", "data", "tools", "dbus", "systemd")]
     + [(str(root / "LICENSE"), "licenses/androidbox")] + runtime_data,
     hiddenimports=[],
     hookspath=[],

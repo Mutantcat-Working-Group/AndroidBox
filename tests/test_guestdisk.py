@@ -332,6 +332,9 @@ class PrepareTests(unittest.TestCase):
             overlay.write_bytes(b"QFI\xfb")
             with patch.object(guestdisk, "remote_checksums", side_effect=AssertionError("network")):
                 self.assertEqual(guestdisk.prepare("arm64", directory), overlay)
+            seed_path = guestdisk.seed.seed_path_for(overlay)
+            self.assertTrue(seed_path.is_file())
+            self.assertEqual(guestdisk.seed.read_iso(seed_path)[0], guestdisk.seed.SEED_LABEL)
 
     def test_prepare_repairs_an_existing_mismatched_overlay(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -359,6 +362,9 @@ class PrepareTests(unittest.TestCase):
             offset, length = struct.unpack_from(">QI", data, 8)[0], struct.unpack_from(">I", data, 16)[0]
             self.assertEqual(data[offset:offset + length], remote_name.encode())
             self.assertTrue((Path(directory) / remote_name).is_file())
+            seed_path = guestdisk.seed.seed_path_for(overlay)
+            self.assertTrue(seed_path.is_file())
+            self.assertEqual(guestdisk.seed.read_iso(seed_path)[0], guestdisk.seed.SEED_LABEL)
 
     def test_prepare_rejects_missing_manifest_entry(self):
         with tempfile.TemporaryDirectory() as directory:

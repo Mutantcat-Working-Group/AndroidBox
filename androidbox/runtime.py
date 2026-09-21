@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 from .process import popen, run
-from . import bundled
+from . import bundled, seed
 
 
 def normalize_arch(value):
@@ -273,6 +273,13 @@ def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_por
                "-device", "virtio-net-pci,netdev=net0",
                "-display", "none", "-vnc", f"127.0.0.1:{vnc_port - 5900},websocket=127.0.0.1:{websocket_port},password=on",
                "-qmp", f"tcp:127.0.0.1:{qmp_port},server=on,wait=off", "-monitor", "none", "-serial", "none"]
+    seed_iso = seed.seed_path_for(config.disk)
+    if seed_iso.is_file():
+        command += ["-blockdev", json.dumps({"driver": "raw", "read-only": True,
+                                             "node-name": "cidata",
+                                             "file": {"driver": "file",
+                                                      "filename": str(seed_iso.resolve())}}),
+                    "-device", "virtio-blk-pci,drive=cidata,bootindex=1"]
     data = bundled.qemu_data(binary)
     if data:
         command += ["-L", str(data)]

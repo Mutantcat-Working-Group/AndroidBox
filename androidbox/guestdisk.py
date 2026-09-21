@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 
+from . import seed
 from .runtime import normalize_arch, state_directory
 
 RELEASE = "noble"
@@ -340,6 +341,7 @@ def prepare(arch, directory=None, size=DEFAULT_DISK_SIZE, local_image=None, dry_
     overlay = directory / managed_disk_name(arch)
     if overlay.is_file():
         repair_overlay_backing_format(overlay)
+        seed.ensure_seed(seed.seed_path_for(overlay), arch)
         return overlay
     remote_name = image_remote_name(arch)
     checksums, checksum_url = remote_checksums()
@@ -351,4 +353,6 @@ def prepare(arch, directory=None, size=DEFAULT_DISK_SIZE, local_image=None, dry_
         return overlay
     base = directory / remote_name
     ensure_base_image(base, expected, local_image, progress)
-    return create_overlay(overlay, base, size)
+    created = create_overlay(overlay, base, size)
+    seed.ensure_seed(seed.seed_path_for(created), arch)
+    return created

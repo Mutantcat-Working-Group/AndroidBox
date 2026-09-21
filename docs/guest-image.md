@@ -16,8 +16,10 @@ On first launch, with no guest disk present, the desktop client shows a
 downloads the same verified image for this computer's architecture and writes the
 managed `androidbox-{arch}.qcow2` overlay directly, without a separate `qemu-img`
 install, then saves the disk to the client settings and switches to the running
-view. The button disappears once a guest disk is present. Use the script below
-when you prefer the terminal or need a specific architecture or output directory.
+view. The same step writes a NoCloud seed next to the overlay so the first boot
+can provision the Android guest automatically. The button disappears once a
+guest disk is present. Use the script below when you prefer the terminal or need
+a specific architecture or output directory.
 
 ### How The Download Is Made Reliable
 
@@ -79,6 +81,7 @@ The script places these files in the guest directory:
 
 - `ubuntu-24.04-minimal-cloudimg-{amd64,arm64}.img` (verified base image)
 - `androidbox-{arch}.qcow2` (32 GiB QCOW2 overlay by default)
+- `androidbox-{arch}-seed.iso` (NoCloud `cidata` first-boot seed)
 
 The guest directory is `%LOCALAPPDATA%\org.mutantcat.androidbox\guests` on
 Windows, `~/Library/Application Support/org.mutantcat.androidbox/guests` on
@@ -89,6 +92,19 @@ desktop client without manual disk selection.
 The overlay depends on its base image; keep both in the same directory and never
 delete the base while the overlay is in use. A downloaded mirror is accepted only
 when its official checksum matches.
+
+### First Boot
+
+The seed is attached as a read-only `cidata` virtio disk and is consumed by
+cloud-init on the first boot. It creates the `ubuntu` account with the default
+password **`androidbox`** (passwordless sudo), enables automatic login on the
+virtual console, installs `linux-modules-extra-$(uname -r)` when Binder is not
+present, extracts the bundled provisioning payload from the seed, and runs
+`guest/provision.sh --dedicated-guest`. The first boot downloads the Android
+images, installs the container service, and reboots into the Android session;
+plan for several minutes the first time. If you provision the disk yourself,
+delete the seed file or change the password so a published image never ships
+with the documented default credentials.
 
 ## Build a Dedicated Guest
 

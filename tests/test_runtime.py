@@ -48,6 +48,30 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(block["file"]["filename"], str(disk.resolve()))
             self.assertNotIn("shell", command)
 
+    def test_cidata_seed_is_attached_when_present(self):
+        from androidbox import seed as seed_module
+        with tempfile.TemporaryDirectory() as directory:
+            disk = Path(directory) / "disk.qcow2"
+            disk.touch()
+            seed_iso = seed_module.seed_path_for(disk)
+            seed_module.write_iso(seed_iso, [("meta-data", b"instance-id: x\n"),
+                                             ("user-data", b"#cloud-config\n")])
+            command = build_command(VMConfig(disk=str(disk)), "qemu-system-x86_64", "tcg", 5907, 5908, 5909)
+            blockdevs = [json.loads(command[index + 1]) for index, arg in enumerate(command) if arg == "-blockdev"]
+            cidata = next(block for block in blockdevs if block.get("node-name") == "cidata")
+            self.assertEqual(cidata["driver"], "raw")
+            self.assertTrue(cidata["read-only"])
+            self.assertEqual(cidata["file"]["filename"], str(seed_iso.resolve()))
+            self.assertIn("virtio-blk-pci,drive=cidata,bootindex=1", command)
+            self.assertIn("virtio-blk-pci,drive=os,bootindex=0", command)
+
+    def test_missing_seed_leaves_no_cidata_device(self):
+        with tempfile.TemporaryDirectory() as directory:
+            disk = Path(directory) / "disk.qcow2"
+            disk.touch()
+            command = build_command(VMConfig(disk=str(disk)), "qemu", "tcg", 5900, 6000, 6001)
+            self.assertNotIn("cidata", " ".join(command))
+
     def test_arm_requires_firmware(self):
         with tempfile.TemporaryDirectory() as directory:
             disk = Path(directory) / "disk.qcow2"

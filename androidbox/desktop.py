@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QPushButton, QSpinBox, QSplitter, QStackedWidget, QStyle, QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import APP_ID, APP_NAME, guestdisk
+from . import APP_ID, APP_NAME, guestdisk, seed
 from .adb import install_apk, executable as adb_executable
 from .display import DisplayServer
 from .process import external_environment
@@ -205,6 +205,17 @@ class MainWindow(QMainWindow):
         except (ValueError, OSError) as error:
             self.config = default_config(discover_disk=False)
             self.log.appendPlainText(str(error))
+        candidates = {}
+        if self.config.disk:
+            candidates[self.config.disk] = self.config.arch
+        managed = self.managed_disk()
+        if managed.is_file():
+            candidates[str(managed)] = normalize_arch(self.config.arch)
+        for disk, arch in candidates.items():
+            try:
+                seed.ensure_seed(seed.seed_path_for(disk), arch)
+            except (OSError, ValueError) as error:
+                self.log.appendPlainText(f"Could not write the first-boot seed for {disk}: {error}")
         toolbar = QToolBar("Runtime")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
@@ -496,6 +507,7 @@ class MainWindow(QMainWindow):
                         self.config = config
                         self.empty_status.setText("Guest disk ready")
                         self.report(f"Guest disk ready: {disk}")
+                        self.report("The first boot installs the Android guest and can take several minutes")
                 else:
                     self.report(result or "Done")
             except Exception as error:
