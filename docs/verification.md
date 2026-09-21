@@ -599,6 +599,30 @@ MB gzips to 226 MB), so each installer would roughly double in size for about
 +1.2 GiB across the five installers. The mirror fallback and the local-image path
 cover the restricted-network and offline cases at no size cost.
 
+## Published Release 1.0.20260924 (2026-09-21)
+
+Tag `v1.0.20260924` points at `c4b1bec`. Run
+[35585959790](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35585959790)
+passed all seven jobs: `validate`, the five platform builds and `release`. The
+published release carries the ten installers plus `SHA256SUMS`.
+
+| Asset | Size |
+| --- | --- |
+| `AndroidBox-1.0.20260924-Windows-x86_64-Setup.exe` | 215 MiB |
+| `AndroidBox-1.0.20260924-macOS-arm64.dmg` | 252 MiB |
+| `AndroidBox-1.0.20260924-macOS-x86_64.dmg` | 263 MiB |
+| `AndroidBox-1.0.20260924-Linux-x86_64.AppImage` | 225 MiB |
+| `AndroidBox-1.0.20260924-Linux-aarch64.AppImage` | 219 MiB |
+
+Each platform also ships a portable `tar.gz` alongside its installer. This
+release attaches a NoCloud `cidata` seed to prepared guest disks. On first boot
+the seed creates the `ubuntu` account with default password `androidbox`
+(passwordless sudo), enables virtual-console autologin, installs the Binder
+modules, extracts the bundled provisioning payload, and runs
+`guest/provision.sh --dedicated-guest` before rebooting into the Android
+session. The seed ISO was parsed with pycdlib and mounted on macOS to confirm
+the `cidata` label, cloud-config files and provisioning payload.
+
 ## Published Release 1.0.20260923 (2026-09-21)
 
 Tag `v1.0.20260923` points at `806b0b9`. Run
