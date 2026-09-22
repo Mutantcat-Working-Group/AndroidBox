@@ -2,7 +2,6 @@ import io
 import json
 import hashlib
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -173,8 +172,9 @@ class SystemImageStagingTests(unittest.TestCase):
                                100000 + 4096 + 64 * 1024 * 1024)
 
     def test_a_staged_disk_unpacks_like_the_guest_expects(self):
-        # provision.sh verifies SHA256SUMS relative to the mount point before it
-        # unzips system.zip and vendor.zip beside it.
+        # provision.sh runs `sha256sum --status -c SHA256SUMS` from the mount
+        # point before it unzips system.zip and vendor.zip beside it. Checking
+        # the very same lines in-process keeps that contract host independent.
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("system.img", b"raw system image")
@@ -192,8 +192,12 @@ class SystemImageStagingTests(unittest.TestCase):
                     patch.object(build_system_images, "download",
                                  side_effect=self._download(payloads)):
                 build_system_images.stage("x86_64", staging)
-            verified = subprocess.run(["sha256sum", "--status", "-c", "SHA256SUMS"], cwd=staging)
-            self.assertEqual(verified.returncode, 0)
+            lines = (staging / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), 2)
+            for line in lines:
+                expected, name = line.split("  ", 1)
+                self.assertEqual(
+                    hashlib.sha256((staging / name).read_bytes()).hexdigest(), expected)
             with zipfile.ZipFile(staging / "system.zip") as archive:
                 self.assertEqual(archive.namelist(), ["system.img"])
 
