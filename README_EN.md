@@ -206,3 +206,9 @@ After verifying the version, the workflow builds five installers and two image d
 | macOS Intel | `AndroidBox-1.0.20261001-macOS-x86_64.dmg` |
 | Linux x86_64 | `AndroidBox-1.0.20261001-Linux-x86_64.AppImage` |
 | Linux ARM64 | `AndroidBox-1.0.20261001-Linux-aarch64.AppImage` |
+
+---
+
+## Acknowledgments
+
+This repository is a fork of [waydroid/waydroid](https://github.com/waydroid/waydroid). Thanks to the original authors for their open-source work; this repository continues to build upon it.
