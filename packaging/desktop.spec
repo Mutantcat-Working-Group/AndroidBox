@@ -62,8 +62,8 @@ analysis = Analysis(
     datas=collect_data_files("androidbox") + collect_data_files("certifi")
     + [(str(root / entry), entry) for entry in
        ("Makefile", "androidbox.py", "guest", "data", "tools", "dbus", "systemd")]
-   + [(str(root / "LICENSE"), "licenses/androidbox")] + runtime_data,
-    + images_data,
+    + [(str(root / "LICENSE"), "licenses/androidbox")] + runtime_data
+   + images_data,
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
