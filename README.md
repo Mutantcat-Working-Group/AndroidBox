@@ -215,3 +215,9 @@ git push origin v1.0.20261001
 | macOS Intel | `AndroidBox-1.0.20261001-macOS-x86_64.dmg` |
 | Linux x86_64 | `AndroidBox-1.0.20261001-Linux-x86_64.AppImage` |
 | Linux ARM64 | `AndroidBox-1.0.20261001-Linux-aarch64.AppImage` |
+
+---
+
+## 致谢
+
+本项目是 [waydroid/waydroid](https://github.com/waydroid/waydroid) 的 Fork，感谢原仓库及其作者的优秀开源工作，本仓库在其基础上继续维护与改进。
