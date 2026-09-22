@@ -56,7 +56,7 @@ def artifact_names(version):
     return names
 
 
-def collect_checksums(directory, version, algorithm):
+def collect_checksums(directory, version, algorithm="sha256"):
     expected = set(artifact_names(version))
     actual = {path.name for path in directory.iterdir() if path.name != "SHA256SUMS" and not path.name.startswith("checksums-")}
     if actual != expected:
