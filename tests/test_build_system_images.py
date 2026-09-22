@@ -3,6 +3,7 @@ import json
 import hashlib
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -166,10 +167,87 @@ class SystemImageStagingTests(unittest.TestCase):
             self.assertFalse((root / "out" / "images-aarch64").exists())
 
     def test_disk_size_reserves_room_for_ext4_overhead(self):
+        # The estimate used to add the byte total on top of the block-rounded
+        # total, so mkfs built a filesystem about twice as large as the archives
+        # inside it and resize2fs could not hand that back. Release assets are
+        # capped well below 4 GiB, so the estimate has to stay near the data.
         with tempfile.TemporaryDirectory() as directory:
-            (Path(directory) / "system.zip").write_bytes(b"x" * 100000)
-            self.assertGreater(build_system_images.filesystem_size(directory),
-                               100000 + 4096 + 64 * 1024 * 1024)
+            payload = 256 * 1024 * 1024
+            (Path(directory) / "system.zip").write_bytes(b"x" * payload)
+            size = build_system_images.filesystem_size(directory)
+            self.assertGreater(size, payload)
+            self.assertLess(size, payload * 1.35)
+
+    def test_shrink_keeps_asking_until_resize2fs_cannot_save_more(self):
+        # One -M pass leaves whole block groups behind, so the shrink has to
+        # repeat until resize2fs names a length it cannot beat.
+        reports = [
+            ("The filesystem on img is now 458752 (4k) blocks long.\n", ""),
+            ("The filesystem on img is now 1935 (4k) blocks long.\n", ""),
+            ("", "resize2fs 1.47.4 (6-Mar-2025)\n"
+                 "The filesystem is already 1919 (4k) blocks long.  Nothing to do!\n"),
+        ]
+        calls = []
+
+        def fake_run(command, *_args, **_kwargs):
+            calls.append(command[0])
+            if command[0] != "resize2fs":
+                return subprocess.CompletedProcess(command, 0, "", "")
+            index = calls.count("resize2fs") - 1
+            return subprocess.CompletedProcess(command, 0, *reports[index])
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "androidbox-img.raw"
+            with output.open("wb") as stream:
+                stream.truncate(4096)
+            with patch.object(build_system_images.subprocess, "run",
+                              side_effect=fake_run):
+                self.assertEqual(build_system_images.shrink(output), 1919)
+        self.assertEqual(calls.count("resize2fs"), 3)
+
+    def test_shrink_stops_when_the_same_length_comes_back(self):
+        def fake_run(command, *_args, **_kwargs):
+            return subprocess.CompletedProcess(
+                command, 0, "The filesystem on img is now 512 (4k) blocks long.\n", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "androidbox-img.raw"
+            with output.open("wb") as stream:
+                stream.truncate(4096)
+            with patch.object(build_system_images.subprocess, "run",
+                              side_effect=fake_run):
+                self.assertEqual(build_system_images.shrink(output), 512)
+
+    def test_shrink_refuses_to_continue_without_a_block_count(self):
+        def fake_run(command, *_args, **_kwargs):
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "androidbox-img.raw"
+            with output.open("wb") as stream:
+                stream.truncate(4096)
+            with patch.object(build_system_images.subprocess, "run",
+                              side_effect=fake_run):
+                with self.assertRaisesRegex(ValueError, "block count"):
+                    build_system_images.shrink(output)
+
+    def test_shrink_keeps_the_last_count_once_the_report_goes_quiet(self):
+        reports = ["The filesystem on img is now 1935 (4k) blocks long.\n", ""]
+        calls = []
+
+        def fake_run(command, *_args, **_kwargs):
+            calls.append(command[0])
+            return subprocess.CompletedProcess(
+                command, 0, reports[len(calls) - 1], "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "androidbox-img.raw"
+            with output.open("wb") as stream:
+                stream.truncate(4096)
+            with patch.object(build_system_images.subprocess, "run",
+                              side_effect=fake_run):
+                self.assertEqual(build_system_images.shrink(output), 1935)
+            self.assertEqual(len(calls), 2)
 
     def test_a_staged_disk_unpacks_like_the_guest_expects(self):
         # provision.sh runs `sha256sum --status -c SHA256SUMS` from the mount

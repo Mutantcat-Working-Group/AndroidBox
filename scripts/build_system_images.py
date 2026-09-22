@@ -105,14 +105,41 @@ def stage(arch, destination):
 
 
 def filesystem_size(staging):
-    """Estimate the blocks the staged files need plus the ext4 overhead."""
+    """Estimate the bytes the staged files need plus the ext4 overhead."""
     staging = Path(staging)
-    data = sum(path.stat().st_size for path in staging.rglob("*") if path.is_file())
     # Every file rounds up to a whole 4 KiB block; the journal and the inode
-    # tables take a flat share. The image is shrunk to its minimum afterwards.
+    # tables take a further share, which scales with the filesystem itself.
+    # The old estimate added the byte count on top of the block-rounded one and
+    # so asked mkfs for roughly twice the disk, which resize2fs could only trim
+    # back to a filesystem the installers cannot carry.
     blocks = sum((path.stat().st_size + 4095) // 4096
                  for path in staging.rglob("*") if path.is_file())
-    return data + blocks * 4096 + 64 * 1024 * 1024
+    return blocks * 4096 + max(64 * 1024 * 1024, blocks * 4096 // 8)
+
+
+def shrink(output, attempts=8):
+    """Return the smallest block count resize2fs can leave on the image."""
+    blocks = None
+    for _ in range(attempts):
+        result = subprocess.run(["resize2fs", "-M", "-f", str(output)],
+                                check=True, capture_output=True, text=True)
+        # resize2fs reports the result on stdout ("... is now N (4k) blocks
+        # long.") and on stderr once it cannot go smaller ("... is already
+        # N ... Nothing to do!"), so both streams are searched.
+        report = re.search(r"is (now|already) ([0-9]+) ",
+                           result.stdout + result.stderr)
+        if not report:
+            if blocks is None:
+                raise ValueError(
+                    f"resize2fs did not report a block count for {output}")
+            break
+        current = int(report.group(2))
+        if current == blocks:
+            break
+        blocks = current
+        if report.group(1) == "already":
+            break
+    return blocks
 
 
 def build_disk(staging, output, label=LABEL):
@@ -125,17 +152,13 @@ def build_disk(staging, output, label=LABEL):
     # A small journal keeps the estimate above predictable; the disk is attached
     # read-only, so it only ever sees a clean filesystem.
     subprocess.run(["mkfs.ext4", "-F", "-q", "-b", "4096", "-J", "size=4",
+                    "-m", "0",
                     "-L", label, "-d", str(staging), str(output)], check=True)
     subprocess.run(["e2fsck", "-fy", str(output)],
                   check=False, capture_output=True, text=True)
-    # resize2fs reports the result on stdout ("... is now N (4k) blocks long.")
-    # and older releases on stderr, so both streams are searched.
-    shrunken = subprocess.run(["resize2fs", "-M", "-f", str(output)],
-                              check=True, capture_output=True, text=True)
-    report = re.search(r"is now ([0-9]+) ", shrunken.stdout + shrunken.stderr)
-    if not report:
-        raise ValueError(f"resize2fs did not report a block count for {output}")
-    blocks = int(report.group(1))
+    # One -M pass leaves whole block groups behind, so it has to keep asking
+    # until resize2fs stops saving blocks.
+    blocks = shrink(output)
     with output.open("r+b") as stream:
         stream.truncate(blocks * 4096)
     subprocess.run(["e2fsck", "-fn", str(output)],
