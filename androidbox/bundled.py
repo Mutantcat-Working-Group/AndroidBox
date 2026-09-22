@@ -24,6 +24,7 @@ def binary(name):
 
 IMAGES_DISK = "androidbox-images.raw"
 IMAGES_PACKAGE = "androidbox-images.pkg"
+MINIMUM_IMAGE_BYTES = 64 << 20
 
 _materialize_lock = threading.Lock()
 
@@ -140,3 +141,36 @@ def verify_images():
     if size <= 0:
         raise ValueError(f"Bundled Android image disk is empty: {disk}")
     return {"path": disk, "arch": arch, "bytes": size}
+
+
+def verify_images_ready():
+    """Describe the bundled guest image without expanding a packaged disk.
+
+    Expanding a multi-gigabyte package takes far longer than a self-test may
+    run, so a package is trusted through its trailer instead: the offset and
+    length prove the disk rides attached and whole, and the first real boot
+    expands it on its own time.
+    """
+    from . import imagesstore
+    from .runtime import normalize_arch
+
+    arch = normalize_arch(platform.machine())
+    directory = images_directory(arch)
+    if directory is not None:
+        disk = Path(directory) / IMAGES_DISK
+        if disk.is_file():
+            size = disk.stat().st_size
+            if size <= 0:
+                raise ValueError(f"Bundled Android image disk is empty: {disk}")
+            return {"path": str(disk), "arch": arch, "bytes": size}
+        package = Path(directory) / IMAGES_PACKAGE
+        if package.is_file():
+            located = imagesstore.locate(package)
+            if located is None:
+                raise ValueError(f"Bundled Android image package is unreadable: {package}")
+            _, _, raw_size = located
+            if raw_size < MINIMUM_IMAGE_BYTES:
+                raise ValueError(f"Bundled Android image package is truncated: {package}")
+            return {"path": str(package), "arch": arch, "packaged": True,
+                    "bytes": package.stat().st_size, "image_bytes": raw_size}
+    raise ValueError(f"Missing bundled Android image disk for {arch}")

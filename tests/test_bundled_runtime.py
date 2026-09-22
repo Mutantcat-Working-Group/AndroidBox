@@ -151,6 +151,54 @@ class BundledRuntimeTests(unittest.TestCase):
         # A failure leaves the package for another attempt.
         self.assertTrue(package.exists())
 
+    def test_verify_images_ready_does_not_expand_a_packaged_disk(self):
+        arch = normalize_arch(platform.machine())
+        package = self.package_images(arch, b"\x33" * 4096)
+        with patch.object(bundled, "MINIMUM_IMAGE_BYTES", 1024):
+            described = bundled.verify_images_ready()
+        self.assertEqual(described["arch"], arch)
+        self.assertTrue(described["packaged"])
+        self.assertEqual(described["path"], str(package))
+        self.assertEqual(described["image_bytes"], 4096)
+        # The self-test runs under a short timeout and must not expand the disk.
+        self.assertTrue(package.exists())
+        directory = self.root / "runtime/images" / arch
+        self.assertFalse((directory / bundled.IMAGES_DISK).exists())
+        self.assertFalse((directory / f"{bundled.IMAGES_DISK}.part").exists())
+
+    def test_verify_images_ready_rejects_a_truncated_package(self):
+        arch = normalize_arch(platform.machine())
+        self.package_images(arch, b"\x44" * 4096)
+        with patch.object(bundled, "MINIMUM_IMAGE_BYTES", 1 << 20):
+            with self.assertRaisesRegex(ValueError, "truncated"):
+                bundled.verify_images_ready()
+        directory = self.root / "runtime/images" / arch
+        self.assertFalse((directory / bundled.IMAGES_DISK).exists())
+
+    def test_verify_images_ready_rejects_an_unreadable_package(self):
+        arch = normalize_arch(platform.machine())
+        directory = self.root / "runtime/images" / arch
+        directory.mkdir(parents=True)
+        (directory / bundled.IMAGES_PACKAGE).write_bytes(b"ANDBOX01" + b"\x00" * 64)
+        with self.assertRaisesRegex(ValueError, "unreadable"):
+            bundled.verify_images_ready()
+        # Reading the trailer must never leave a partial disk behind.
+        self.assertFalse((directory / bundled.IMAGES_DISK).exists())
+
+    def test_verify_images_ready_reports_an_expanded_disk(self):
+        arch = normalize_arch(platform.machine())
+        images = self.root / "runtime/images" / arch / bundled.IMAGES_DISK
+        images.parent.mkdir(parents=True)
+        images.write_bytes(b"\x00" * 2048)
+        described = bundled.verify_images_ready()
+        self.assertEqual(described["path"], str(images))
+        self.assertEqual(described["bytes"], 2048)
+        self.assertNotIn("packaged", described)
+
+    def test_verify_images_ready_requires_the_bundled_disk(self):
+        with self.assertRaisesRegex(ValueError, "Missing bundled Android image disk"):
+            bundled.verify_images_ready()
+
     def test_source_checkout_does_not_use_meipass(self):
         with patch("sys.frozen", False), patch("androidbox.runtime.shutil.which", return_value="/system/qemu"):
             self.assertEqual(executable(VMConfig()), "/system/qemu")

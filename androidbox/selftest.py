@@ -13,7 +13,7 @@ from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtWidgets import QApplication
 
 from androidbox.desktop import MainWindow, SettingsDialog
-from androidbox.bundled import verify_images, verify_runtime
+from androidbox.bundled import verify_images_ready, verify_runtime
 from androidbox.display import DisplayServer
 from androidbox.runtime import VMConfig, load_config, reserve_ports
 
@@ -71,7 +71,7 @@ def main(argv=None):
                 if args.require_runtime:
                     runtime.update(verify_runtime())
                 if args.require_images:
-                    images.update(verify_images())
+                    images.update(verify_images_ready())
                 assert window.windowTitle() == "AndroidBox"
                 assert window.start_action.isEnabled()
                 assert not window.stop_action.isEnabled()
