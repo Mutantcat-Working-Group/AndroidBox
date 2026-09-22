@@ -1,7 +1,11 @@
 """Collect a native QEMU prefix for PyInstaller dependency analysis."""
 
+import os
 from pathlib import Path
 import platform
+import shutil
+
+from androidbox.bundled import IMAGES_DISK
 
 
 def _qemu_license(prefix, windows=False):
@@ -89,3 +93,27 @@ def collect_adb(directory, system=None):
         # staged binary carries an $ORIGIN/lib runpath so it finds them there.
         data.append((str(libraries), "runtime/lib"))
     return binaries, data
+
+
+def stage_images_disk(images_raw, arch, staging):
+    """Return the (source, destination) pair that ships the guest image disk.
+
+    PyInstaller keeps only the basename of a data source and appends it to the
+    destination directory, so the disk has to sit under its canonical name
+    before the analysis sees it: pointing straight at the downloaded artifact
+    nests ``androidbox-images.raw`` as a directory below ``runtime/images`` and
+    the frozen client then finds no disk to attach to the guest.
+    """
+    source = Path(images_raw).resolve(strict=True)
+    if arch not in {"x86_64", "aarch64"}:
+        raise ValueError(f"Unsupported guest image architecture: {arch}")
+    staged = Path(staging) / arch / IMAGES_DISK
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.unlink(missing_ok=True)
+    try:
+        os.link(source, staged)
+    except OSError:
+        # A hard link cannot cross filesystems and Windows blocks them for
+        # unprivileged callers; the copy is the same bytes and always works.
+        shutil.copyfile(source, staged)
+    return str(staged), f"runtime/images/{arch}"

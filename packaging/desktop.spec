@@ -10,7 +10,7 @@ from PyInstaller.utils.hooks import collect_data_files
 root = Path(SPECPATH).parent
 sys.path.insert(0, str(root))
 from scripts.release_metadata import validate_versions, windows_version
-from scripts.runtime_payload import collect_qemu, collect_adb
+from scripts.runtime_payload import collect_adb, collect_qemu, stage_images_disk
 
 version = validate_versions(root)
 version_resource = None
@@ -41,8 +41,8 @@ if os.environ.get("ANDROIDBOX_IMAGES_RAW"):
     # The guest Android images ride beside the QEMU payload under a per-guest
     # architecture directory, so first boot installs them without reaching the
     # OTA channels. The disk is attached read-only by the running client.
-    images_raw = Path(os.environ["ANDROIDBOX_IMAGES_RAW"]).resolve(strict=True)
-    images_data = [(str(images_raw), f"runtime/images/{runtime_arch}/androidbox-images.raw")]
+    images_data = [stage_images_disk(os.environ["ANDROIDBOX_IMAGES_RAW"], runtime_arch,
+                                     root / "build" / "bundled-images")]
 if os.environ.get("ANDROIDBOX_QEMU_PREFIX"):
     runtime_binaries, runtime_data = collect_qemu(os.environ["ANDROIDBOX_QEMU_PREFIX"], runtime_arch)
 if os.environ.get("ANDROIDBOX_ADB_DIRECTORY"):

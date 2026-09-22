@@ -84,14 +84,19 @@ jobs:
         include:
           - os: ubuntu-22.04
             arch: x86_64
+            images: x86_64
           - os: ubuntu-24.04-arm
             arch: aarch64
+            images: aarch64
           - os: macos-15
             arch: arm64
+            images: aarch64
           - os: macos-15-intel
             arch: x86_64
+            images: x86_64
           - os: windows-2022
             arch: x86_64
+            images: x86_64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -149,7 +154,9 @@ jobs:
           path: images
       - name: Select the bundled Android image disk
         shell: bash
-        run: echo "ANDROIDBOX_IMAGES_RAW=$GITHUB_WORKSPACE/images/androidbox-images-${{ matrix.arch }}.raw" >> "$GITHUB_ENV"
+        # macOS labels the machine arm64 while the guest disk is named after the
+        # architecture QEMU runs, which the matrix carries separately.
+        run: echo "ANDROIDBOX_IMAGES_RAW=$GITHUB_WORKSPACE/images/androidbox-images-${{ matrix.images }}.raw" >> "$GITHUB_ENV"
       - run: python scripts/fetch_novnc.py
       - run: python -m pip install '.[desktop,build]'
       - run: python -m PyInstaller packaging/desktop.spec --noconfirm

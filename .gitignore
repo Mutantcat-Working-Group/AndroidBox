@@ -134,3 +134,6 @@ dmypy.json
 
 # Downloaded noVNC sources; run scripts/fetch_novnc.py before building wheels.
 androidbox/web/novnc/
+
+# Downloaded guest Android image disks staged for the desktop packagers.
+/images/
