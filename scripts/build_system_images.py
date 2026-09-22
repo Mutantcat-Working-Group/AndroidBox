@@ -84,7 +84,10 @@ def stage(arch, destination):
     entries = {}
     for component in COMPONENTS:
         entry = read_channel(arch, component)
-        entries[component] = download(entry, destination / f"{component}.zip")
+        # download() writes the verified archive and returns its path, so the
+        # channel metadata has to be captured separately.
+        download(entry, destination / f"{component}.zip")
+        entries[component] = entry
     # The guest proves the archives before unpacking them, so the checksums
     # file has to name the staged copies exactly as they sit on the disk.
     checksums = "".join(f"{entries[component]['id']}  {component}.zip\n"

@@ -38,7 +38,8 @@ class SystemImageStagingTests(unittest.TestCase):
     def _download(self, payloads):
         def download(entry, target):
             Path(target).write_bytes(payloads[entry["url"]])
-            return entry
+            # The real download() hands back the archive path, never the entry.
+            return target
         return download
 
     def test_stage_verifies_and_describes_the_archives(self):
@@ -74,6 +75,29 @@ class SystemImageStagingTests(unittest.TestCase):
             self.assertFalse((staging / "system.zip").exists())
             self.assertFalse((staging / "vendor.zip").exists())
             self.assertFalse((staging / "SHA256SUMS").exists())
+
+    def test_stage_keeps_the_channel_entry_after_the_download(self):
+        # download() returns the archive path. Staging that value used to turn
+        # every checksum and manifest field into a PosixPath, which the guest
+        # cannot verify, so the entry has to be captured separately.
+        payloads = self._payloads()
+
+        def download(entry, target):
+            Path(target).write_bytes(payloads[entry["url"]])
+            return target
+
+        with tempfile.TemporaryDirectory() as directory:
+            staging = Path(directory) / "staging"
+            with patch.object(build_system_images, "read_channel",
+                              side_effect=self._channel), \
+                    patch.object(build_system_images, "download", side_effect=download):
+                entries = build_system_images.stage("x86_64", staging)
+            self.assertEqual(entries["system"]["id"], "a" * 64)
+            self.assertEqual((staging / "SHA256SUMS").read_text(encoding="utf-8"),
+                             f"{'a' * 64}  system.zip\n{'b' * 64}  vendor.zip\n")
+            manifest = json.loads((staging / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ota_arch"], "x86_64")
+            self.assertEqual(manifest["images"]["vendor"]["sha256"], "b" * 64)
 
     def test_read_channel_picks_the_newest_entry(self):
         older = dict(self.system, datetime=1, id="c" * 64)
