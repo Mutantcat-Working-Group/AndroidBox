@@ -12,7 +12,7 @@ from tools.config.save import save
 #
 # Exported variables (internal configuration)
 #
-version = "1.0.20260928"
+version = "1.0.20260929"
 tools_src = os.path.normpath(os.path.realpath(__file__) + "/../../..")
 
 # Keys saved in the config file (mostly what we ask in 'androidbox init')

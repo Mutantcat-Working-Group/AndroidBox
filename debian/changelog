@@ -1,3 +1,15 @@
+androidbox (1.0.20260929) unstable; urgency=medium
+
+  * Ship a NoCloud network-config with the seed, so cloud-init brings the QEMU
+    virtio NIC up with DHCP and the Android container has an uplink on first
+    boot instead of booting with no default route.
+  * Add a Display quality setting (responsive, balanced, sharp) that maps to
+    the noVNC quality level, trading image sharpness for input latency.
+  * Rebuild the toolbar as one icon-only row: the brand, then Start, Shut down
+    and Install APK left-aligned, a stretch, then Settings, Logs and Full
+    screen right-aligned, with no separator and a uniform icon size.
+  * Draw the toolbar glyphs in code so every platform shows identical icons.
+
 androidbox (1.0.20260928) unstable; urgency=medium
 
   * Ship the guest Android images inside every installer on a read-only ext4

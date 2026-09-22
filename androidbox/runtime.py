@@ -66,6 +66,10 @@ def disk_format(path):
 CPU_MODES = ("auto", "host", "max", "qemu64")
 DISK_CACHES = ("writeback", "none", "unsafe")
 TCG_THREADS = ("auto", "multi", "single")
+DISPLAY_QUALITY = ("responsive", "balanced", "sharp")
+# noVNC quality levels: lower numbers trade image sharpness for less encoding
+# work on both ends, which keeps mouse and touch input feeling immediate.
+QUALITY_LEVELS = {"responsive": 3, "balanced": 6, "sharp": 9}
 
 
 def select_cpu(accelerator, cpu_mode):
@@ -83,6 +87,14 @@ def block_cache(disk_cache):
     if disk_cache == "none":
         return {"direct": True}
     return None
+
+
+def display_quality_level(quality):
+    """Return the noVNC quality level a display quality name maps to."""
+    try:
+        return QUALITY_LEVELS[quality]
+    except KeyError:
+        raise ValueError(f"Invalid display quality: {quality}") from None
 
 
 def default_config(discover_disk=True):
@@ -120,6 +132,7 @@ class VMConfig:
     cpu_mode: str = "auto"
     disk_cache: str = "writeback"
     tcg_threads: str = "auto"
+    display_quality: str = "balanced"
 
     def resolved_firmware(self):
         if self.firmware:
@@ -164,6 +177,8 @@ class VMConfig:
             raise ValueError("Invalid disk cache mode")
         if self.tcg_threads not in TCG_THREADS:
             raise ValueError("Invalid TCG thread mode")
+        if self.display_quality not in DISPLAY_QUALITY:
+            raise ValueError("Invalid display quality")
         if self.disk_format not in {"qcow2", "raw"}:
             raise ValueError("Disk format must be qcow2 or raw")
         if check_files:

@@ -10,29 +10,65 @@ import subprocess
 import sys
 import time
 
-from PySide6.QtCore import QLockFile, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtCore import QLockFile, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QIcon, QPalette
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
-    QPushButton, QSpinBox, QSplitter, QStackedWidget, QStyle, QToolBar, QVBoxLayout, QWidget,
+    QPushButton, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QStyle, QToolBar,
+    QVBoxLayout, QWidget,
 )
 
 from . import APP_ID, APP_NAME, guestdisk, seed
 from .adb import install_apk, executable as adb_executable
 from .display import DisplayServer
+from .icons import icon
 from .power import PowerSession
 from .process import external_environment
 from .runtime import (
     VMConfig, VirtualMachine, default_config, disk_format, executable, load_config,
-    normalize_arch, probe, save_config, state_directory,
+    display_quality_level, normalize_arch, probe, save_config, state_directory,
 )
 
 
 # The host can lose the guest process when it suspends; give the desktop a
 # bounded budget of automatic restarts before leaving the user in control.
 MAX_GUEST_RESTARTS = 5
+
+
+# One icon size for every toolbar button keeps the row visually even.
+TOOLBAR_ICON_SIZE = 20
+
+
+def build_toolbar(owner, toolbar, ink, brand, left_buttons, right_buttons):
+    """Fill the toolbar and return its actions keyed by name.
+
+    The brand leads, the runtime controls follow left-aligned, a stretch pushes
+    the window controls against the right edge, and nothing separates the two
+    groups: one icon-only row, three buttons per side, no divider in between.
+    """
+    actions = {}
+    toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+    toolbar.setIconSize(QSize(TOOLBAR_ICON_SIZE, TOOLBAR_ICON_SIZE))
+    toolbar.addWidget(brand)
+
+    def add(button):
+        key, glyph, label, checkable = button
+        action = QAction(icon(glyph, ink), label, owner)
+        action.setToolTip(label)
+        action.setCheckable(checkable)
+        toolbar.addAction(action)
+        actions[key] = action
+
+    for button in left_buttons:
+        add(button)
+    stretch = QWidget(toolbar)
+    stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+    toolbar.addWidget(stretch)
+    for button in right_buttons:
+        add(button)
+    return actions
 
 
 class SettingsDialog(QDialog):
@@ -73,6 +109,13 @@ class SettingsDialog(QDialog):
         self.tcg.setToolTip("Multi-threaded TCG spreads guest CPU emulation over host threads; "
                             "single keeps it on one thread and can help some hosts.")
         form.addRow("TCG threads", self.tcg)
+        self.quality = QComboBox()
+        self.quality.addItems(["responsive", "balanced", "sharp"])
+        self.quality.setCurrentText(config.display_quality)
+        self.quality.setToolTip(
+            "Display quality. Responsive sends lightly compressed frames so mouse and "
+            "touch input feel immediate; sharp costs more encoding work on both ends.")
+        form.addRow("Display quality", self.quality)
         self.memory = QSpinBox()
         self.memory.setRange(1024, 262144)
         self.memory.setSingleStep(1024)
@@ -140,7 +183,8 @@ class SettingsDialog(QDialog):
                         memory_mb=self.memory.value(), cpus=self.cpus.value(),
                         accelerator=self.accel.currentText(), disk_format=self.format.currentText(),
                         cpu_mode=self.cpu_mode.currentText(), disk_cache=self.cache.currentText(),
-                        tcg_threads=self.tcg.currentText())
+                        tcg_threads=self.tcg.currentText(),
+                        display_quality=self.quality.currentText())
 
 
 class LocalImageDialog(QDialog):
@@ -229,18 +273,35 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         brand = QLabel("  AndroidBox  ")
         brand.setStyleSheet("font-size: 18px; font-weight: 600;")
-        toolbar.addWidget(brand)
-        self.start_action = self.action(toolbar, "Start", QStyle.SP_MediaPlay, self.start_vm)
-        self.stop_action = self.action(toolbar, "Shut down", QStyle.SP_MediaStop, self.stop_vm)
-        self.install_action = self.action(toolbar, "Install APK", QStyle.SP_FileIcon, self.install_apk)
-        toolbar.addSeparator()
-        self.settings_action = self.action(toolbar, "Settings", QStyle.SP_FileDialogDetailedView, self.settings)
-        self.action(toolbar, "Full screen", QStyle.SP_TitleBarMaxButton, self.toggle_fullscreen)
-        self.logs_action = self.action(toolbar, "Logs", QStyle.SP_FileDialogInfoView,
-                                       lambda: self.log.setVisible(self.logs_action.isChecked()))
-        self.logs_action.setCheckable(True)
+        ink = toolbar.palette().color(QPalette.ColorRole.WindowText).name()
+        left_buttons = [
+            ("start", "play", "Start", False),
+            ("stop", "stop", "Shut down", False),
+            ("install", "install", "Install APK", False),
+        ]
         if sys.platform.startswith("linux"):
-            self.native_action = self.action(toolbar, "Linux native", QStyle.SP_ComputerIcon, self.native)
+            left_buttons.append(("native", "computer", "Linux native", False))
+        right_buttons = [
+            ("settings", "gear", "Settings", False),
+            ("logs", "exclamation", "Logs", True),
+            ("fullscreen", "fullscreen", "Full screen", False),
+        ]
+        actions = build_toolbar(self, toolbar, ink, brand, left_buttons, right_buttons)
+        self.start_action = actions["start"]
+        self.stop_action = actions["stop"]
+        self.install_action = actions["install"]
+        self.settings_action = actions["settings"]
+        self.logs_action = actions["logs"]
+        self.fullscreen_action = actions["fullscreen"]
+        self.native_action = actions.get("native")
+        self.start_action.triggered.connect(self.start_vm)
+        self.stop_action.triggered.connect(self.stop_vm)
+        self.install_action.triggered.connect(self.install_apk)
+        self.settings_action.triggered.connect(self.settings)
+        self.logs_action.triggered.connect(lambda: self.log.setVisible(self.logs_action.isChecked()))
+        self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        if self.native_action is not None:
+            self.native_action.triggered.connect(self.native)
         self.stack = QStackedWidget()
         empty = QWidget()
         empty.setStyleSheet("background: #16191b; color: #d5dcdf;")
@@ -298,13 +359,6 @@ class MainWindow(QMainWindow):
                 "display will not interrupt the running guest")
         self.update_actions()
 
-    def action(self, toolbar, label, icon, callback):
-        action = QAction(self.style().standardIcon(icon), label, self)
-        action.setToolTip(label)
-        action.triggered.connect(callback)
-        toolbar.addAction(action)
-        return action
-
     def report(self, message):
         self.log.appendPlainText(message)
         self.statusBar().showMessage(message)
@@ -330,7 +384,7 @@ class MainWindow(QMainWindow):
         self.settings_action.setEnabled(not busy and not running)
         self.stop_action.setEnabled(not busy and running)
         self.install_action.setEnabled(not busy and running and not self.shutdown_requested)
-        if hasattr(self, "native_action"):
+        if self.native_action is not None:
             self.native_action.setEnabled(not busy and not running and not native_running)
         self.update_empty_state()
 
@@ -507,7 +561,10 @@ class MainWindow(QMainWindow):
                 result = future.result()
                 if operation == "start":
                     self.was_running = True
-                    self.view.setUrl(QUrl(f"{self.server.url}#port={self.vm.websocket_port}&password={self.vm.password}"))
+                    quality = display_quality_level(self.config.display_quality)
+                    self.view.setUrl(QUrl(
+                        f"{self.server.url}#port={self.vm.websocket_port}"
+                        f"&password={self.vm.password}&quality={quality}"))
                     self.stack.setCurrentIndex(1)
                     self.report(f"QEMU running | {self.config.arch} | {result.upper()}")
                 elif operation == "stop":

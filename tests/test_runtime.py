@@ -5,7 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from androidbox.runtime import (VMConfig, block_cache, build_command, choose_accelerator,
-    normalize_arch, load_config, save_config, select_cpu, executable)
+    normalize_arch, load_config, save_config, select_cpu, executable,
+    display_quality_level, DISPLAY_QUALITY, QUALITY_LEVELS)
 
 
 class RuntimeTests(unittest.TestCase):
@@ -162,17 +163,31 @@ class RuntimeTests(unittest.TestCase):
             VMConfig(disk_cache="magic").validate(check_files=False)
         with self.assertRaisesRegex(ValueError, "TCG thread"):
             VMConfig(tcg_threads="many").validate(check_files=False)
+        with self.assertRaisesRegex(ValueError, "display quality"):
+            VMConfig(display_quality="cinema").validate(check_files=False)
 
     def test_performance_options_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.json"
-            config = VMConfig(disk="/disk.qcow2", cpu_mode="max", disk_cache="none", tcg_threads="single")
+            config = VMConfig(disk="/disk.qcow2", cpu_mode="max", disk_cache="none",
+                              tcg_threads="single", display_quality="responsive")
             save_config(config, path)
             self.assertEqual(load_config(path), config)
 
     def test_defaults_expose_performance_settings(self):
         config = VMConfig()
-        self.assertEqual((config.cpu_mode, config.disk_cache, config.tcg_threads), ("auto", "writeback", "auto"))
+        self.assertEqual((config.cpu_mode, config.disk_cache, config.tcg_threads,
+                          config.display_quality), ("auto", "writeback", "auto", "balanced"))
+
+    def test_display_quality_levels_cover_the_whole_range(self):
+        self.assertEqual(set(QUALITY_LEVELS), set(DISPLAY_QUALITY))
+        for name, level in QUALITY_LEVELS.items():
+            self.assertIsInstance(level, int)
+            self.assertTrue(0 <= level <= 9)
+        self.assertEqual(display_quality_level("responsive"), 3)
+        self.assertEqual(display_quality_level("sharp"), 9)
+        with self.assertRaises(ValueError):
+            display_quality_level("cinema")
 
 
 if __name__ == "__main__":

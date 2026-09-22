@@ -23,8 +23,9 @@ class SeedTests(unittest.TestCase):
             label, files = seed.read_iso(path)
             self.assertEqual(label, seed.SEED_LABEL)
             self.assertEqual(set(files), {"META-DATA", "USER-DATA",
-                                          seed.PAYLOAD_ARCHIVE.upper(),
-                                          seed.VERSION_FILE.upper()})
+                                         "NETWORK-CONFIG",
+                                         seed.PAYLOAD_ARCHIVE.upper(),
+                                         seed.VERSION_FILE.upper()})
             self.assertEqual(seed.seed_version(path), seed.__version__)
             # The instance-id carries the seed version so cloud-init re-runs
             # its per-instance modules whenever the seed changes.
@@ -33,7 +34,19 @@ class SeedTests(unittest.TestCase):
             user_data = files["USER-DATA"].decode("utf-8")
             self.assertIn("#cloud-config", user_data)
             self.assertIn("--autologin ubuntu", user_data)
+            network = files["NETWORK-CONFIG"].decode("utf-8")
+            self.assertIn("dhcp4: true", network)
+            self.assertIn("name: e*", network)
             self.assertTrue(files[seed.PAYLOAD_ARCHIVE.upper()])
+
+    def test_network_config_matches_every_virtio_ethernet_card(self):
+        network = seed.network_config()
+        self.assertIn("version: 2", network)
+        self.assertIn("ethernets:", network)
+        self.assertIn("match:", network)
+        self.assertIn("name: e*", network)
+        self.assertIn("dhcp4: true", network)
+        self.assertIn("dhcp6: false", network)
 
     def test_write_seed_changes_instance_id_with_version(self):
         with tempfile.TemporaryDirectory() as directory:

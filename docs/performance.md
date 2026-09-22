@@ -24,6 +24,11 @@ previous behavior:
   the disk to direct I/O, `unsafe` also drops guest flush requests. `none`
   needs `O_DIRECT` support and can fail on some filesystems; `unsafe` risks the
   guest filesystem when the host crashes.
+- Display quality: `responsive`, `balanced` (default) and `sharp` map to noVNC
+  quality levels 3, 6 and 9. Lower levels compress frames harder, so both
+  ends spend less time encoding and decoding and mouse, touch and swipe input
+  feel immediate; `sharp` keeps text crisp at the cost of input latency. If
+  the interface feels laggy, drop to `responsive` before buying more cores.
 - Disable log pane while gaming; it polls the QEMU log file on the GUI thread.
 
 ## Measured results

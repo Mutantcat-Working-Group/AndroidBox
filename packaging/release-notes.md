@@ -1,5 +1,20 @@
 ## AndroidBox Desktop Preview
 
+## AndroidBox 1.0.20260929
+
+This release makes the guest reach the network on first boot and cuts input
+latency. The NoCloud seed now carries a `network-config` that matches the QEMU
+virtio NIC (`e*`) and takes a DHCP lease, so the Android container inside the
+Ubuntu support layer has an uplink without any manual step; the first boot
+script also checks for a default route and warns on screen when one is
+missing. A new Display quality setting (responsive, balanced, sharp) maps to
+the noVNC quality level, so hosts that felt laggy can trade image sharpness
+for input that keeps up with the mouse. The toolbar is now a single icon-only
+row: brand, Start, Shut down and Install APK on the left, Settings, Logs and
+Full screen on the right, with no divider and one uniform icon size drawn in
+code for every platform. The log pane stays collapsed until the Logs button
+opens it.
+
 ## AndroidBox 1.0.20260928
 
 This release ships the Android system inside every installer, so an installed

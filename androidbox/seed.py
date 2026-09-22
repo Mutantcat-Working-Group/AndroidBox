@@ -64,6 +64,26 @@ def meta_data(arch, version=None):
     return f"instance-id: androidbox-{arch}-{version}\nlocal-hostname: androidbox\n"
 
 
+def network_config():
+    """Return the netplan configuration the guest NIC needs to reach the internet.
+
+    It ships as the NoCloud ``network-config`` file. The minimal cloud image
+    carries no netplan of its own, and cloud-init's fallback enumeration does
+    not reliably match the QEMU virtio interface names, so the guest can boot
+    without ever taking a DHCP lease - which leaves the Android container
+    inside it without an uplink. ``e*`` covers predictable names (ens3,
+    enp0s3) as well as hardware-path names (enp0s3 on PCI virtio slots).
+    """
+    return """version: 2
+ethernets:
+  androidbox:
+    match:
+      name: e*
+    dhcp4: true
+    dhcp6: false
+"""
+
+
 def _indent(text, spaces):
     padding = " " * spaces
     # Block scalars need every line padded; blank lines stay blank so YAML does
@@ -199,6 +219,18 @@ for _ in $(seq 1 60); do
     sleep 2
 done
 
+# cloud-init only asks for a lease on the interfaces it matches, so a NIC it
+# never matched stays down and every download below fails with a DNS error.
+if ip route show default 2>/dev/null | grep -q .; then
+    log "the guest has a network uplink"
+else
+    echo_progress "WARNING: no default route; downloads will fail"
+    for link in /sys/class/net/e*; do
+        [[ -e $link ]] || continue
+        dhclient -4 "$(basename "$link")" 2>/dev/null || true
+    done
+fi
+
 # Binder is a module of the generic kernel; the minimal cloud image ships the
 # kernel without its extra modules.
 echo_progress "Setting up binder kernel module..."
@@ -291,6 +323,7 @@ def write_seed(path, arch, version=None, root=None):
     write_iso(path, [
         ("meta-data", meta_data(arch, version).encode("utf-8")),
         ("user-data", user_data(version).encode("utf-8")),
+        ("network-config", network_config().encode("utf-8")),
         (PAYLOAD_ARCHIVE, payload),
         (VERSION_FILE, f"{version}\n".encode("utf-8")),
     ])

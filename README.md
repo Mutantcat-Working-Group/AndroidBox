@@ -17,7 +17,7 @@
 - **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 
-**当前版本：`1.0.20260928`。** 安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。首次启动点击 **Prepare example guest disk** 即可准备 Ubuntu 24.04 minimal 客体盘：下载固定版本镜像、校验官方 SHA256，生成客户端可自动识别的 QCOW2 磁盘，并在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退国内镜像，也可用 **Use a local image** 选择已下载镜像。开机后云端初始化自动登录、设置已知密码并一次性安装 Android 容器，不再停留在 `ubuntu login:`。
+**当前版本：`1.0.20260929`。** 安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。首次启动点击 **Prepare example guest disk** 即可准备 Ubuntu 24.04 minimal 客体盘：下载固定版本镜像、校验官方 SHA256，生成客户端可自动识别的 QCOW2 磁盘，并在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退国内镜像，也可用 **Use a local image** 选择已下载镜像。开机后云端初始化自动登录、设置已知密码并一次性安装 Android 容器，不再停留在 `ubuntu login:`。
 
 ### 二、安装方式
 
@@ -61,19 +61,91 @@ Linux 原生容器后端依赖 LXC、支持 Binder 的内核、Wayland、D-Bus�
 
 客体系统账户为 `ubuntu`，默认密码为 **`androidbox`**，控制台自动登录，无需手动输入。
 
-如果启动后停在 `ubuntu@androidbox:~$` 命令行、没有任何 `[androidbox-firstboot]` 进度，说明首次引导没有执行。首次配置由 `androidbox-firstboot.service` 负责，每次开机重试直到完成；可手动执行 `sudo systemctl enable --now androidbox-firstboot.service`。进度与失败原因输出到屏幕和 `/var/log/androidbox-firstboot.log`，`sudo journalctl -u androidbox-firstboot` 查看服务日志。
+客体网卡由 NoCloud `network-config` 自动配置 DHCP（匹配 QEMU virtio 网卡 `e*`），首次开机即带默认路由，安卓容器开箱即可联网；首次引导脚本也会检查默认路由，缺失时在屏幕告警并尝试 `dhclient`。
+
+如果启动后停在 `ubuntu@androidbox:~$` 命令行、没有出现首次引导进度，说明自动初始化没有执行；重启一次客体通常会继续重试。进度与失败原因会同时打印在屏幕和客体内的 `/var/log/androidbox-firstboot.log`，可复制给客服排查。
 
 下载失败时，准备过程依次尝试官方源和两个国内镜像，自动重试并支持断点续传；TLS 校验使用安装包内置 CA 证书，不依赖宿主 OpenSSL 配置。仍失败时错误框的 Details 会列出每个镜像的原因。
 
 **休眠看门狗**：运行期间客户端会请求宿主机保持唤醒（Windows 执行状态、macOS `caffeinate`、Linux `systemd-inhibit`），合盖或空闲睡眠不会中断客体；若 QEMU 仍被宿主中断，客户端自动重启客体，最多 5 次，之后把控制权交回用户。客体主动关机（退出码 0）不会被重启，也可以随时用 Start 手动重试。
 
-**默认参数**：首次启动按宿主架构填写客体架构，CPU 取逻辑核心数的一半（1–6 核），内存取总内存一半并按 GiB 向下取整（1–6 GiB），检测失败时用 2 核、2 GiB；已有设置不会被覆盖。QEMU 与 ARM 固件自动查找，手动填写的路径优先。可调项还有 CPU 型号（host/max/qemu64）、TCG 线程数（单线程/多线程）和磁盘缓存（writeback/none/unsafe），默认值保持原有行为，实测数据见 [性能与游戏](./docs/performance.md)。
+**默认参数**：首次启动按宿主架构填写客体架构，CPU 取逻辑核心数的一半（1–6 核），内存取总内存一半并按 GiB 向下取整（1–6 GiB），检测失败时用 2 核、2 GiB；已有设置不会被覆盖。QEMU 与 ARM 固件自动查找，手动填写的路径优先。可调项还有 CPU 型号（host/max/qemu64）、TCG 线程数（单线程/多线程）、磁盘缓存（writeback/none/unsafe）和显示质量（responsive/balanced/sharp，画质越低编码越少、操作越跟手），默认值保持原有行为，实测数据见 [性能与游戏](./docs/performance.md)。
 
-日志栏默认收起，工具栏按钮展开；运行日志同时写入应用数据目录下的 `qemu.log`。磁盘与设置位于系统应用数据目录的 `org.mutantcat.androidbox`，macOS 为 `~/Library/Application Support`。
+工具栏是一列纯图标：左侧依次为启动、关机、安装 APK，右侧依次为设置、日志、全屏，两侧图标大小一致，中间没有分割线；日志栏默认收起，点右侧感叹号图标展开。运行日志同时写入应用数据目录下的 `qemu.log`。磁盘与设置位于系统应用数据目录的 `org.mutantcat.androidbox`，macOS 为 `~/Library/Application Support`。
 
-### 四、构建与发布
+### 四、专注的点
+
+- 用 QEMU 兼容层把 Linux 原生 Android 容器带到 Windows、macOS 与 Linux，窗口化界面与虚拟化管理保持一致。
+- 安装包真正开箱即用：内置 QEMU、ADB 与整套 Android 镜像，默认参数按宿主资源预填，首次启动不需要命令行。
+- 客体准备可复现：固定版本镜像、官方 SHA256 校验、NoCloud 种子自动登录，国内镜像与本地镜像作为等价备选。
+- 宿主机休眠、合盖、异常退出都不让用户丢会话：请求保持唤醒，客体中断后有界自动重启。
+- 五个安装包全部由原生 runner 构建，并在各自平台完成安装、挂载、自检与卸载验证后才允许发布。
+- 保留上游 `lineageos.waydroid.*` 接口、属性、界面标记与 OTA 兼容性，同时把宿主侧产品 ID 收敛到 `org.mutantcat.androidbox`。
+
+### 五、开发进度
+
+- [X] AndroidBox 品牌与 `org.mutantcat.androidbox` 宿主命名改造。
+- [X] Qt 窗口、虚拟机配置、日志、全屏及内嵌 noVNC；日志栏默认收起。
+- [X] QEMU 启动、正常关机、强制停止及授权 ADB 安装 APK。
+- [X] 三平台五种目标组合的安装包流程，内置 QEMU、ADB 与整套 Android 镜像。
+- [X] 根目录 `logo.png` 生成 PNG、ICO、ICNS 图标，供窗口和安装器使用。
+- [X] macOS ARM64 / Intel 本机构建、ad-hoc 签名、DMG 挂载自检与固件画面测试。
+- [X] Ubuntu 24.04 示例客体盘下载、校验与自动识别，NoCloud 种子自动登录。
+- [X] 首次启动按宿主资源预填默认参数，无需命令行即可使用。
+- [X] 宿主机休眠看门狗与客体异常退出有界自动重启。
+- [X] 五种目标组合的原生 CI 打包、自检和标签触发 Release 全流程。
+- [ ] 各平台真实硬件加速与完整 Android 客体兼容性验证。
+- [ ] Android 鼠标定位、SystemUI 启动异常及共享存储问题修复。
+- [ ] 音频转发、GPU 加速、宿主剪贴板和文件共享。
+- [ ] 干净机器兼容性、完整依赖许可证及源码再分发审核。
+
+开发检查：
+
+```sh
+python -m pip install -e '.[desktop,dev]'
+python scripts/fetch_novnc.py
+python -m unittest discover -s tests -v
+ruff check .
+QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python scripts/smoke_desktop.py
+QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python scripts/smoke_qemu.py
+```
+
+客体磁盘配置见 [客体镜像准备](./docs/guest-image.md)，实测记录见 [验证记录](./docs/verification.md)。上游项目：[Waydroid](https://github.com/waydroid/waydroid)、[QEMU](https://www.qemu.org/)。问题反馈请到 [issues](https://github.com/Mutantcat-Working-Group/AndroidBox/issues)。许可证见 [LICENSE](./LICENSE)。
+
+
+### 六、构建与发布
 
 必须在目标系统上原生构建，PyInstaller 不跨平台编译。发布脚本建议 Python 3.12，至少 3.11。
+
+开发自检（需要 Python 3.10+ 与桌面依赖）：
+
+```sh
+python -m pip install -e '.[desktop,dev]'
+python scripts/fetch_novnc.py
+python -m unittest discover -s tests -v
+ruff check .
+QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python scripts/smoke_desktop.py
+```
+
+单元测试不需要 Android 客体或实际 QEMU。需要 QEMU 的固件画面冒烟使用临时空白磁盘，ARM64 Mac 可传 `--arch aarch64 --accel hvf` 及 `--firmware`。更换应用图标时替换根目录 1024×1024 `logo.png`，安装 Pillow 后运行 `python scripts/generate_icons.py`，再构建安装包。
+
+仓库内容分布：
+
+```text
+.
+├── androidbox/          # Qt 客户端、QEMU/ADB 管理、noVNC 资源
+├── tools/               # Linux 原生容器后端
+├── guest/               # Linux/Android 客体配置脚本
+├── data/                # 桌面入口、图标与应用元数据
+├── packaging/           # PyInstaller、NSIS、AppImage 配置及原生图标
+├── scripts/             # 下载、打包、签名和验证工具
+├── tests/               # 单元测试
+├── docs/                # 客体准备、性能与验证记录
+├── .github/workflows/   # CI 与 Release 流程
+├── logo.png             # 应用图标源文件
+├── pyproject.toml
+└── README.md
+```
 
 ```sh
 python scripts/fetch_novnc.py
@@ -123,76 +195,19 @@ macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整 `dist/AndroidBox
 
 内置 Android 镜像由 `scripts/build_system_images.py` 生成。Windows 安装器因为 makensis 无法把超大文件压进数据库，改为把压缩后的镜像追加在安装器尾部，安装时放进运行时目录，首次启动自动展开，展开后删除压缩包以节省空间。Platform Tools 固定 `37.0.1` 并校验 SHA1、SHA256；Windows QEMU 固定 Chocolatey `2026.8.11`。依赖许可证和源码再分发的完整性仍需审核。
 
-[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签，标签必须与源码版本一致，例如 `v1.0.20260928`；手动运行只生成 CI artifacts，不发布 Release。发布流程：
+[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签，标签必须与源码版本一致，例如 `v1.0.20260929`；手动运行只生成 CI artifacts，不发布 Release。发布流程：
 
 ```sh
-git tag -a v1.0.20260928 -m "AndroidBox 1.0.20260928"
-git push origin v1.0.20260928
+git tag -a v1.0.20260929 -m "AndroidBox 1.0.20260929"
+git push origin v1.0.20260929
 ```
 
 工作流验证版本后并行构建五份安装包与两份镜像盘，全部通过才创建并发布 Release；失败不会发布缺少附件的版本。每次原生构建都会执行单元测试、Qt/noVNC 冒烟测试与包内 QEMU/ADB 检查，随后再检查 Windows 实际安装目录、macOS 只读挂载的 DMG 或 Linux 解包后的 AppImage。全部成功后生成 `SHA256SUMS`，先上传草稿再公开发布。已发布的 Release 不会被重复运行覆盖；只有发布任务拥有 `contents: write`，不需要签名密钥。进度见 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml)。
 
 | 平台 | 当前版本产物 |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260928-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20260928-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260928-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260928-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20260928-Linux-aarch64.AppImage` |
-
-### 五、专注的点
-
-- 用 QEMU 兼容层把 Linux 原生 Android 容器带到 Windows、macOS 与 Linux，窗口化界面与虚拟化管理保持一致。
-- 安装包真正开箱即用：内置 QEMU、ADB 与整套 Android 镜像，默认参数按宿主资源预填，首次启动不需要命令行。
-- 客体准备可复现：固定版本镜像、官方 SHA256 校验、NoCloud 种子自动登录，国内镜像与本地镜像作为等价备选。
-- 宿主机休眠、合盖、异常退出都不让用户丢会话：请求保持唤醒，客体中断后有界自动重启。
-- 五个安装包全部由原生 runner 构建，并在各自平台完成安装、挂载、自检与卸载验证后才允许发布。
-- 保留上游 `lineageos.waydroid.*` 接口、属性、界面标记与 OTA 兼容性，同时把宿主侧产品 ID 收敛到 `org.mutantcat.androidbox`。
-
-```text
-.
-├── androidbox/          # Qt 客户端、QEMU/ADB 管理、noVNC 资源
-├── tools/               # Linux 原生容器后端
-├── guest/               # Linux/Android 客体配置脚本
-├── data/                # 桌面入口、图标与应用元数据
-├── packaging/           # PyInstaller、NSIS、AppImage 配置及原生图标
-├── scripts/             # 下载、打包、签名和验证工具
-├── tests/               # 单元测试
-├── docs/                # 客体准备、性能与验证记录
-├── .github/workflows/   # CI 与 Release 流程
-├── logo.png             # 应用图标源文件
-├── pyproject.toml
-└── README.md
-```
-
-### 六、开发进度
-
-- [X] AndroidBox 品牌与 `org.mutantcat.androidbox` 宿主命名改造。
-- [X] Qt 窗口、虚拟机配置、日志、全屏及内嵌 noVNC；日志栏默认收起。
-- [X] QEMU 启动、正常关机、强制停止及授权 ADB 安装 APK。
-- [X] 三平台五种目标组合的安装包流程，内置 QEMU、ADB 与整套 Android 镜像。
-- [X] 根目录 `logo.png` 生成 PNG、ICO、ICNS 图标，供窗口和安装器使用。
-- [X] macOS ARM64 / Intel 本机构建、ad-hoc 签名、DMG 挂载自检与固件画面测试。
-- [X] Ubuntu 24.04 示例客体盘下载、校验与自动识别，NoCloud 种子自动登录。
-- [X] 首次启动按宿主资源预填默认参数，无需命令行即可使用。
-- [X] 宿主机休眠看门狗与客体异常退出有界自动重启。
-- [X] 五种目标组合的原生 CI 打包、自检和标签触发 Release 全流程。
-- [ ] 各平台真实硬件加速与完整 Android 客体兼容性验证。
-- [ ] Android 鼠标定位、SystemUI 启动异常及共享存储问题修复。
-- [ ] 音频转发、GPU 加速、宿主剪贴板和文件共享。
-- [ ] 干净机器兼容性、完整依赖许可证及源码再分发审核。
-
-开发检查：
-
-```sh
-python -m pip install -e '.[desktop,dev]'
-python scripts/fetch_novnc.py
-python -m unittest discover -s tests -v
-ruff check .
-QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python scripts/smoke_desktop.py
-QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu python scripts/smoke_qemu.py
-```
-
-单元测试不需要 Android 客体或实际 QEMU。`smoke_qemu.py` 需要 QEMU，使用临时空白磁盘检查固件画面；ARM64 Mac 可传 `--arch aarch64 --accel hvf` 及 `--firmware`。更新图标时替换根目录 1024×1024 `logo.png`，安装 Pillow 后运行 `python scripts/generate_icons.py`，并提交生成的 PNG、ICO、ICNS。
-
-客体磁盘配置见 [客体镜像准备](./docs/guest-image.md)，实测记录见 [验证记录](./docs/verification.md)。上游项目：[Waydroid](https://github.com/waydroid/waydroid)、[QEMU](https://www.qemu.org/)。问题反馈请到 [issues](https://github.com/Mutantcat-Working-Group/AndroidBox/issues)。许可证见 [LICENSE](./LICENSE)。
+| Windows x86_64 | `AndroidBox-1.0.20260929-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20260929-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20260929-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20260929-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20260929-Linux-aarch64.AppImage` |
