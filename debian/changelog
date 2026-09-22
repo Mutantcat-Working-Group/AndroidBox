@@ -1,3 +1,9 @@
+androidbox (1.0.20261001) unstable; urgency=medium
+
+  * Name the program holding the guest disk when QEMU cannot lock it: the
+    runtime log is read after a failed start, and a disk another QEMU already
+    holds is reported in plain language instead of a bare exit code.
+
 androidbox (1.0.20260930) unstable; urgency=medium
 
   * Give the guest real sound, a microphone and a working camera: QEMU attaches

@@ -18,7 +18,7 @@
 - **Native Linux Backend**: The Android container approach based on LXC, Binder and Wayland is kept.
 - **Unified App Identity**: The product name is AndroidBox and the application ID is `org.mutantcat.androidbox`.
 
-**Current version: `1.0.20260930`.** Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch. On first start, click **Prepare example guest disk** to prepare an Ubuntu 24.04 minimal guest disk: it downloads the pinned image, verifies the official SHA256, produces a QCOW2 disk the client recognizes automatically, and generates a NoCloud first-boot seed next to the disk. When the official source is unreachable it falls back to domestic mirrors, and **Use a local image** lets you pick an already downloaded image. After boot the cloud init logs in automatically, sets a known password and installs the Android container in one pass, instead of stopping at `ubuntu login:`.
+**Current version: `1.0.20261001`.** Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch. On first start, click **Prepare example guest disk** to prepare an Ubuntu 24.04 minimal guest disk: it downloads the pinned image, verifies the official SHA256, produces a QCOW2 disk the client recognizes automatically, and generates a NoCloud first-boot seed next to the disk. When the official source is unreachable it falls back to domestic mirrors, and **Use a local image** lets you pick an already downloaded image. After boot the cloud init logs in automatically, sets a known password and installs the Android container in one pass, instead of stopping at `ubuntu login:`.
 
 ### 2. Installation
 
@@ -190,19 +190,19 @@ macOS produces `dist/AndroidBox.app`, Windows/Linux produce a full `dist/Android
 
 The bundled Android images are produced by `scripts/build_system_images.py`. Because makensis cannot compress very large files into its database, the Windows installer appends the compressed image to the installer tail, places it into the runtime directory on install, and expands it on first launch, deleting the compressed archive afterwards to save space. Platform Tools is pinned to `37.0.1` with SHA1 and SHA256 checks, and the Windows QEMU is pinned to Chocolatey `2026.8.11`. Dependency licenses and the completeness of source redistribution still need review.
 
-[Build Desktop Installers](./.github/workflows/desktop.yaml) listens for `v*` tags, and the tag must match the source version, for example `v1.0.20260930`; manual runs only produce CI artifacts and do not publish a Release. The release flow:
+[Build Desktop Installers](./.github/workflows/desktop.yaml) listens for `v*` tags, and the tag must match the source version, for example `v1.0.20261001`; manual runs only produce CI artifacts and do not publish a Release. The release flow:
 
 ```sh
-git tag -a v1.0.20260930 -m "AndroidBox 1.0.20260930"
-git push origin v1.0.20260930
+git tag -a v1.0.20261001 -m "AndroidBox 1.0.20261001"
+git push origin v1.0.20261001
 ```
 
 After verifying the version, the workflow builds five installers and two image disks in parallel, and only creates and publishes the Release when all of them pass; a failure will not publish a version with missing attachments. Every native build runs unit tests, Qt/noVNC smoke tests and in-package QEMU/ADB checks, then inspects the actual Windows install directory, the read-only mounted macOS DMG, or the extracted Linux AppImage. On full success it generates `SHA256SUMS`, uploads a draft first, and only then publishes it publicly. An already published Release is not overwritten by repeat runs; only the publish job holds `contents: write`, and no signing keys are needed. Progress is on the [Actions page](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml).
 
 | Platform | Current Version Artifact |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260930-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20260930-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260930-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260930-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20260930-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20261001-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20261001-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20261001-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20261001-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20261001-Linux-aarch64.AppImage` |

@@ -1,5 +1,14 @@
 ## AndroidBox Desktop Preview
 
+## AndroidBox 1.0.20261001
+
+When QEMU cannot start because the guest disk is already in use, the client now
+says so plainly: after a failed start it reads the runtime log, recognizes the
+image lock, and reports which kind of program holds the disk, instead of
+surfacing a bare "QEMU exited during startup (1)". Close the other virtual
+machine, for example a second AndroidBox or QEMU started from the terminal, and
+start again.
+
 ## AndroidBox 1.0.20260930
 
 The guest now has sound, a microphone and a working camera. QEMU attaches an
