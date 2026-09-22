@@ -30,7 +30,7 @@ from .process import external_environment
 from .runtime import (
     VMConfig, VirtualMachine, audio_driver, default_config, disk_format, executable,
     load_config, display_quality_level, normalize_arch, probe, save_config,
-    state_directory,
+    startup_failure_reason, state_directory,
 )
 
 
@@ -606,7 +606,8 @@ class MainWindow(QMainWindow):
             try:
                 for _ in range(60):
                     if not self.vm.running:
-                        raise RuntimeError("QEMU exited during startup; see the runtime log")
+                        raise RuntimeError(startup_failure_reason(self.log_path)
+                                           or "QEMU exited during startup; see the runtime log")
                     try:
                         self.vm.connect_display()
                         return accelerator

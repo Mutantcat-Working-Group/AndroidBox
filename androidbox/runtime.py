@@ -100,6 +100,25 @@ AUDIO_DEVICE_ID = "androidbox-audio"
 # QEMU prints this when a codec device cannot take a capture voice, for
 # instance when the host withholds the microphone from the application.
 AUDIO_CAPTURE_DENIED = "Can not open `adc'"
+DISK_LOCK_MARKERS = ('Failed to get "write" lock', "Is another process using the image")
+
+
+def startup_failure_reason(log_path):
+    """Name why QEMU refused to run, when the runtime log knows it.
+
+    A guest disk another QEMU already holds (for example a second AndroidBox,
+    or a terminal QEMU whose overlay backs the same image) surfaces as a bare
+    exit code; this returns the sentence the user needs instead.
+    """
+    try:
+        text = Path(log_path).read_text("utf-8", errors="replace")
+    except OSError:
+        return None
+    if any(marker in text for marker in DISK_LOCK_MARKERS):
+        return ("Another program is using the guest disk, so QEMU could not lock it "
+                "for writing. Close the other virtual machine (for example a second "
+                "AndroidBox or QEMU started from the terminal) and start again.")
+    return None
 
 
 def select_cpu(accelerator, cpu_mode):
@@ -470,7 +489,8 @@ class VirtualMachine:
             code = self.process.returncode if self.process is not None else None
             self.terminate()
             if index == len(attempts) - 1:
-                raise RuntimeError(f"QEMU exited during startup ({code}); see the runtime log")
+                raise RuntimeError(startup_failure_reason(log_path)
+                                   or f"QEMU exited during startup ({code}); see the runtime log")
 
     def survives_startup(self, seconds=2.0):
         """True when QEMU stays alive for a moment after it was launched."""
