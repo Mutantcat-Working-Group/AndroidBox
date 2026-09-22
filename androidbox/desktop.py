@@ -22,11 +22,17 @@ from PySide6.QtWidgets import (
 from . import APP_ID, APP_NAME, guestdisk, seed
 from .adb import install_apk, executable as adb_executable
 from .display import DisplayServer
+from .power import PowerSession
 from .process import external_environment
 from .runtime import (
     VMConfig, VirtualMachine, default_config, disk_format, executable, load_config,
     normalize_arch, probe, save_config, state_directory,
 )
+
+
+# The host can lose the guest process when it suspends; give the desktop a
+# bounded budget of automatic restarts before leaving the user in control.
+MAX_GUEST_RESTARTS = 5
 
 
 class SettingsDialog(QDialog):
@@ -197,6 +203,8 @@ class MainWindow(QMainWindow):
         self.log_offset = 0
         self.log_path = state_directory() / "qemu.log"
         self.shutdown_requested = False
+        self.restarts = 0
+        self.recovering = False
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(2000)
@@ -282,6 +290,12 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.timer.start(250)
+        self.power = PowerSession()
+        held = self.power.acquire()
+        if held:
+            self.log.appendPlainText(
+                f"The host is kept awake with {held}; a closed lid or a sleeping "
+                "display will not interrupt the running guest")
         self.update_actions()
 
     def action(self, toolbar, label, icon, callback):
@@ -383,6 +397,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, APP_NAME, str(error))
 
     def start_vm(self):
+        if not self.recovering:
+            self.restarts = 0
+        self.recovering = False
         if not self.config.disk:
             path, _ = QFileDialog.getOpenFileName(self, "Select bootable Linux/Android guest disk",
                                                 str(state_directory() / "guests"),
@@ -432,6 +449,7 @@ class MainWindow(QMainWindow):
         self.update_actions()
 
     def stop_vm(self):
+        self.restarts = 0
         if self.shutdown_requested:
             answer = QMessageBox.question(self, "Force stop", "Force stop the virtual machine? Unsaved guest data may be lost.")
             if answer != QMessageBox.Yes:
@@ -527,6 +545,10 @@ class MainWindow(QMainWindow):
             self.empty_status.setText("Stopped" if code == 0 else f"QEMU exited ({code})")
             self.report(self.empty_status.text())
             self.stop_action.setToolTip("Shut down")
+            # A clean exit is the guest powering itself off: restarting it here
+            # would fight the user shutting Android down from inside the guest.
+            if not self.shutdown_requested and code != 0:
+                self.recover_guest(code)
         self.update_actions()
 
     def close_display(self):
@@ -535,6 +557,25 @@ class MainWindow(QMainWindow):
         if self.server:
             self.server.close()
             self.server = None
+
+    def recover_guest(self, code):
+        """Start the guest again after an exit the user did not ask for.
+
+        A host that suspends takes the QEMU process with it. The guest disk
+        and the saved settings are unchanged, so retry a bounded number of
+        times before handing control back to the user.
+        """
+        if self.future is not None:
+            return
+        if self.restarts >= MAX_GUEST_RESTARTS:
+            self.report(f"QEMU keeps exiting ({code}); press Start to try again")
+            return
+        self.restarts += 1
+        self.empty_status.setText("Recovering the guest...")
+        self.report(f"QEMU exited unexpectedly ({code}); restarting the guest "
+                    f"({self.restarts} of {MAX_GUEST_RESTARTS})")
+        self.recovering = True
+        self.start_vm()
 
     def toggle_fullscreen(self):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
@@ -552,6 +593,7 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.vm.terminate()
         self.close_display()
+        self.power.release()
         self.pool.shutdown(wait=True)
         event.accept()
 

@@ -3,6 +3,7 @@
 from pathlib import Path
 import platform
 import sys
+import threading
 
 
 def runtime_root():
@@ -22,6 +23,9 @@ def binary(name):
 
 
 IMAGES_DISK = "androidbox-images.raw"
+IMAGES_PACKAGE = "androidbox-images.pkg"
+
+_materialize_lock = threading.Lock()
 
 
 def images_directory(arch):
@@ -39,13 +43,39 @@ def images_disk(arch):
     Release builds may ship the guest images per architecture; the block
     device is attached read-only so first boot can install them without
     reaching the OTA channels.
+    Windows installers carry the disk as a compressed package beside the
+    runtime directory, because a disk of this size cannot travel inside the
+    NSIS database.
     """
     directory = images_directory(arch)
     if directory is not None:
         candidate = directory / IMAGES_DISK
         if candidate.is_file():
             return str(candidate)
+        disk = materialize_images_disk(directory)
+        if disk is not None:
+            return str(disk)
     return None
+
+
+def materialize_images_disk(directory):
+    """Expand a packaged image disk the client has not seen yet, once."""
+    disk = Path(directory) / IMAGES_DISK
+    package = Path(directory) / IMAGES_PACKAGE
+    with _materialize_lock:
+        if disk.is_file() and disk.stat().st_size > 0:
+            return disk
+        if not package.is_file():
+            return None
+        from . import imagesstore
+
+        imagesstore.extract(package, disk)
+    try:
+        # The expanded disk replaces the package it came from.
+        package.unlink()
+    except OSError:
+        pass
+    return disk
 
 
 def qemu_data(executable):

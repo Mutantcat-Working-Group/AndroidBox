@@ -176,6 +176,10 @@ jobs:
           set -euo pipefail
           if [ "${{ runner.os }}" = Linux ]; then
             python scripts/package_desktop.py --appimagetool build/appimagetool.AppImage --arch ${{ matrix.arch }}
+          elif [ "${{ runner.os }}" = Windows ]; then
+            # The Android system image rides appended to the installer: makensis
+            # cannot compress the multi-gigabyte disk into its database.
+            python scripts/package_desktop.py --arch ${{ matrix.arch }} --images-raw "$ANDROIDBOX_IMAGES_RAW"
           else
             python scripts/package_desktop.py --arch ${{ matrix.arch }}
           fi

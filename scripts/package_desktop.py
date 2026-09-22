@@ -77,15 +77,40 @@ def package_mac(version, arch, output):
     return target
 
 
-def package_windows(version, output):
+def package_windows(version, output, images_raw=None):
     compiler = shutil.which("makensis") or str(Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "NSIS/makensis.exe")
     target = output / f"AndroidBox-{version}-Windows-x86_64-Setup.exe"
-    run(compiler, "/WX", f"/DVERSION={version}",
-        f"/DNUMERIC_VERSION={'.'.join(map(str, windows_version(version)))}",
-        f"/DPAYLOAD={ROOT / 'dist/AndroidBox'}", f"/DOUTPUT={target}",
-        f"/DLICENSE_FILE={ROOT / 'LICENSE'}",
-        f"/DICON_FILE={ROOT / 'packaging/icons/AndroidBox.ico'}", ROOT / "packaging/windows.nsi")
+    defines = ["/DIMAGES_PKG=1"] if images_raw is not None else []
+    with tempfile.TemporaryDirectory(prefix="androidbox-payload-", dir=ROOT) as temporary:
+        stage = stage_payload(ROOT / "dist/AndroidBox", Path(temporary) / "payload")
+        run(compiler, "/WX", f"/DVERSION={version}",
+            f"/DNUMERIC_VERSION={'.'.join(map(str, windows_version(version)))}",
+            f"/DPAYLOAD={stage}", f"/DOUTPUT={target}",
+            f"/DLICENSE_FILE={ROOT / 'LICENSE'}",
+            f"/DICON_FILE={ROOT / 'packaging/icons/AndroidBox.ico'}",
+            *defines, ROOT / "packaging/windows.nsi")
+    if images_raw is not None:
+        from androidbox.imagesstore import append
+
+        append(target, Path(images_raw))
     return target
+
+
+def stage_payload(source, stage):
+    """Hard-link the application payload, leaving the guest image disk behind.
+
+    makensis fails to mmap a datablock that grew past its 16 MiB threshold,
+    so the image disk cannot enter the NSIS database: it is appended to the
+    finished installer instead and the installer copies it beside the
+    runtime directory, where the client expands it on first boot.
+    """
+    from androidbox.bundled import IMAGES_DISK
+
+    def ignore(directory, names):
+        return {name for name in names if name in (IMAGES_DISK, f"{IMAGES_DISK}.part")}
+
+    shutil.copytree(source, stage, copy_function=os.link, ignore=ignore, symlinks=True)
+    return stage
 
 
 def package_linux(version, output, appimagetool, arch):
@@ -111,6 +136,8 @@ def package_linux(version, output, appimagetool, arch):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--appimagetool")
+    parser.add_argument("--images-raw", type=Path,
+                        help="Windows only: bundled Android image disk to append to the installer")
     parser.add_argument("--arch", choices=["x86_64", "aarch64", "arm64"])
     parser.add_argument("--output", type=Path, default=ROOT / "dist/installers")
     args = parser.parse_args()
@@ -126,7 +153,7 @@ def main():
     if sys.platform == "darwin" and arch in ("arm64", "x86_64"):
         target = package_mac(version, arch, output)
     elif sys.platform == "win32" and arch == "x86_64":
-        target = package_windows(version, output)
+        target = package_windows(version, output, args.images_raw)
     elif sys.platform.startswith("linux") and arch in ("x86_64", "aarch64"):
         target = package_linux(version, output, args.appimagetool, arch)
     else:

@@ -49,6 +49,17 @@ Section "AndroidBox" SEC_MAIN
     MessageBox MB_ICONSTOP "Could not install AndroidBox. Close any running AndroidBox window and retry."
     Abort
   ${EndIf}
+!ifdef IMAGES_PKG
+  ; The Android system image rides appended to this installer; place it where
+  ; the client looks for it and expands it on first boot.
+  CreateDirectory "$INSTDIR\_internal\runtime\images\x86_64"
+  ClearErrors
+  CopyFiles /SILENT "$EXEPATH" "$INSTDIR\_internal\runtime\images\x86_64\androidbox-images.pkg"
+  ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Could not install the bundled Android system image. Free some disk space and retry."
+    Abort
+  ${EndIf}
+!endif
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\AndroidBox"
   CreateShortcut "$SMPROGRAMS\AndroidBox\AndroidBox.lnk" "$INSTDIR\AndroidBox.exe"

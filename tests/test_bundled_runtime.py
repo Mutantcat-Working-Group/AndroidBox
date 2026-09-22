@@ -94,6 +94,63 @@ class BundledRuntimeTests(unittest.TestCase):
         self.assertEqual(described["path"], str(images))
         self.assertEqual(described["bytes"], 2048)
 
+    def package_images(self, arch, content):
+        """Compress a guest image the way the Windows installer ships one."""
+        from androidbox import imagesstore
+
+        directory = self.root / "runtime/images" / arch
+        directory.mkdir(parents=True, exist_ok=True)
+        source = self.root / f"{arch}-source.raw"
+        source.write_bytes(content)
+        package = directory / bundled.IMAGES_PACKAGE
+        package.touch()
+        return imagesstore.append(package, source)
+
+    def test_a_packaged_image_disk_is_expanded_on_first_use(self):
+        package = self.package_images("aarch64", b"\x11" * 4096)
+        disk = Path(bundled.images_disk("aarch64"))
+        self.assertEqual(disk.name, bundled.IMAGES_DISK)
+        self.assertEqual(disk.read_bytes(), b"\x11" * 4096)
+        # The expanded disk replaces the package it came from.
+        self.assertFalse(package.exists())
+
+    def test_an_expanded_image_disk_is_never_expanded_again(self):
+        directory = self.root / "runtime/images/aarch64"
+        directory.mkdir(parents=True)
+        disk = directory / bundled.IMAGES_DISK
+        disk.write_bytes(b"already expanded")
+        package = directory / bundled.IMAGES_PACKAGE
+        package.write_bytes(b"not a package")
+        self.assertEqual(Path(bundled.images_disk("aarch64")), disk)
+        # A package is only consumed when the disk beside it is missing.
+        self.assertTrue(package.exists())
+
+    def test_an_architecture_without_any_image_disk(self):
+        directory = self.root / "runtime/images/aarch64"
+        directory.mkdir(parents=True)
+        self.assertIsNone(bundled.images_disk("aarch64"))
+        self.assertIsNone(bundled.materialize_images_disk(directory))
+
+    def test_verify_images_expands_a_packaged_disk(self):
+        arch = normalize_arch(platform.machine())
+        self.package_images(arch, b"\x22" * 2048)
+        described = bundled.verify_images()
+        self.assertEqual(described["arch"], arch)
+        self.assertEqual(described["bytes"], 2048)
+        self.assertEqual(Path(described["path"]).name, bundled.IMAGES_DISK)
+
+    def test_a_broken_package_is_reported_instead_of_halving_a_disk(self):
+        directory = self.root / "runtime/images/aarch64"
+        directory.mkdir(parents=True)
+        package = directory / bundled.IMAGES_PACKAGE
+        package.write_bytes(b"ANDBOX01" + b"\x00" * 64)
+        with self.assertRaises(Exception):
+            bundled.materialize_images_disk(directory)
+        self.assertFalse((directory / bundled.IMAGES_DISK).exists())
+        self.assertFalse((directory / f"{bundled.IMAGES_DISK}.part").exists())
+        # A failure leaves the package for another attempt.
+        self.assertTrue(package.exists())
+
     def test_source_checkout_does_not_use_meipass(self):
         with patch("sys.frozen", False), patch("androidbox.runtime.shutil.which", return_value="/system/qemu"):
             self.assertEqual(executable(VMConfig()), "/system/qemu")
