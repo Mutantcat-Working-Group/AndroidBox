@@ -24,7 +24,9 @@ jobs:
       - name: Install Qt runtime libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 \
+          # QtMultimedia cannot import without the PulseAudio client library, which
+          # leaves the camera stack inert and its tests erroring on this runner.
+          sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 libnss3 libasound2 libpulse0 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
             libxkbcommon-x11-0 libxcb-shape0 libxcb-xkb1 libminizip1
       - name: Validate version tag
@@ -116,6 +118,9 @@ jobs:
               # PyInstaller bundles only what it can resolve on the analysis host,
               # so the xcb platform plugin needs these present to reach the AppImage.
               shared+=(libxkbcommon-x11-0 libxcb-shape0 libxcb-xkb1)
+              # Without the PulseAudio client library QtMultimedia fails to import
+              # during analysis, and the frozen Linux build ships no camera at all.
+              shared+=(libpulse0)
               if [ "${{ matrix.arch }}" = aarch64 ]; then
                 # Google publishes no AArch64 Linux Platform Tools archive, so the ARM
                 # build stages the distribution's own ADB plus its shared libraries.

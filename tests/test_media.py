@@ -145,13 +145,13 @@ class CameraStreamTests(unittest.TestCase):
         self.assertIsInstance(names, list)
         self.assertTrue(all(isinstance(name, str) for name in names))
 
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
     def test_a_host_without_a_webcam_reports_it(self):
-        from PySide6.QtMultimedia import QMediaDevices
         streamer = camera.CameraStreamer(7101)
         reports = []
         streamer.status.connect(reports.append)
         empty = type("Device", (), {"isNull": staticmethod(lambda: True)})
-        with patch.object(QMediaDevices, "defaultVideoInput", staticmethod(lambda: empty())):
+        with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: empty())):
             self.assertFalse(streamer.start())
         self.assertFalse(streamer.running)
         self.assertIn("no video input device", reports[0])
@@ -169,6 +169,7 @@ class CameraStreamTests(unittest.TestCase):
             finally:
                 importlib.reload(camera)
 
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
     def test_frames_flow_through_a_capture_session(self):
         # QCamera carries no video sink of its own, so the frames have to
         # travel through the capture session that owns both camera and sink.
