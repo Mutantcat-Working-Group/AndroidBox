@@ -1,0 +1,17 @@
+[Unit]
+Description=AndroidBox guest camera bridge (feeds the Android camera app)
+After=androidbox-container.service
+Requires=androidbox-container.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/androidbox/camera-bridge.py /dev/video0
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/androidbox
+
+[Install]
+WantedBy=multi-user.target

@@ -13,11 +13,12 @@
 - **内置系统镜像**：按客体架构打包整套 Android 镜像（`system` + `vendor`，位于只读 `androidbox-img` 磁盘），首次开机不再访问 Waydroid OTA 渠道。
 - **APK 安装**：通过经过设备授权的 ADB 安装应用，优先使用安装包内置的 ADB。
 - **开箱即用**：首次启动按宿主架构预填客体架构、CPU、内存与磁盘路径，无需命令行即可准备示例盘并启动。
+- **声音与摄像头**：默认挂载模拟声卡与 V4L2 摄像头，安卓应用、媒体播放和录音走宿主机音频设备，宿主机摄像头画面实时推送到安卓相机应用；宿主没有摄像头时相机显示测试图案。
 - **休眠看门狗**：运行期间阻止宿主机合盖休眠与空闲睡眠，客体被宿主异常中断后自动重启，最多 5 次。
 - **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 
-**当前版本：`1.0.20260929`。** 安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。首次启动点击 **Prepare example guest disk** 即可准备 Ubuntu 24.04 minimal 客体盘：下载固定版本镜像、校验官方 SHA256，生成客户端可自动识别的 QCOW2 磁盘，并在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退国内镜像，也可用 **Use a local image** 选择已下载镜像。开机后云端初始化自动登录、设置已知密码并一次性安装 Android 容器，不再停留在 `ubuntu login:`。
+**当前版本：`1.0.20260930`。** 安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。首次启动点击 **Prepare example guest disk** 即可准备 Ubuntu 24.04 minimal 客体盘：下载固定版本镜像、校验官方 SHA256，生成客户端可自动识别的 QCOW2 磁盘，并在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退国内镜像，也可用 **Use a local image** 选择已下载镜像。开机后云端初始化自动登录、设置已知密码并一次性安装 Android 容器，不再停留在 `ubuntu login:`。
 
 ### 二、安装方式
 
@@ -73,6 +74,8 @@ Linux 原生容器后端依赖 LXC、支持 Binder 的内核、Wayland、D-Bus�
 
 工具栏是一列纯图标：左侧依次为启动、关机、安装 APK，右侧依次为设置、日志、全屏，两侧图标大小一致，中间没有分割线；日志栏默认收起，点右侧感叹号图标展开。把文件拖进窗口即会上传到 Android 的 Download 目录，拖入 APK 时推送完成后会自动触发安装。运行日志同时写入应用数据目录下的 `qemu.log`。磁盘与设置位于系统应用数据目录的 `org.mutantcat.androidbox`，macOS 为 `~/Library/Application Support`。
 
+**声音与摄像头**：设置里提供 **Audio output**、**Microphone**、**Camera** 三个开关，默认全部自动开启。开启声音后 QEMU 挂载 Intel HDA 声卡，客体 Ubuntu 通过 PulseAudio 把安卓的声音输出到宿主机音箱，麦克风则把宿主机输入送到安卓的录音、通话与语音应用；宿主机声卡被其他程序占用或 QEMU 缺少音频后端时，客户端会自动降级（先关麦克风、再关全部声音），客体仍然正常启动。开启摄像头后，客户端把宿主机默认摄像头压缩成 MJPEG 并经 QEMU 端口映射送进客体的摄像头桥接服务，写入 V4L2 环回设备供安卓相机应用读取，采集 15 fps、最长边 640；宿主机没有摄像头（或摄像头被占用）时，客体自动显示测试图案，相机应用仍能正常打开。把任一选项改为 `off` 即可完全关闭对应设备。
+
 ### 四、专注的点
 
 - 用 QEMU 兼容层把 Linux 原生 Android 容器带到 Windows、macOS 与 Linux，窗口化界面与虚拟化管理保持一致。
@@ -93,10 +96,11 @@ Linux 原生容器后端依赖 LXC、支持 Binder 的内核、Wayland、D-Bus�
 - [X] Ubuntu 24.04 示例客体盘下载、校验与自动识别，NoCloud 种子自动登录。
 - [X] 首次启动按宿主资源预填默认参数，无需命令行即可使用。
 - [X] 宿主机休眠看门狗与客体异常退出有界自动重启。
+- [X] 客体声音输出、麦克风输入与宿主机摄像头画面接入安卓相机应用。
 - [X] 五种目标组合的原生 CI 打包、自检和标签触发 Release 全流程。
 - [ ] 各平台真实硬件加速与完整 Android 客体兼容性验证。
 - [ ] Android 鼠标定位、SystemUI 启动异常及共享存储问题修复。
-- [ ] 音频转发、GPU 加速、宿主剪贴板和文件共享。
+- [ ] GPU 加速、宿主剪贴板与文件共享进一步完善。
 - [ ] 干净机器兼容性、完整依赖许可证及源码再分发审核。
 
 开发检查：
@@ -195,19 +199,19 @@ macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整 `dist/AndroidBox
 
 内置 Android 镜像由 `scripts/build_system_images.py` 生成。Windows 安装器因为 makensis 无法把超大文件压进数据库，改为把压缩后的镜像追加在安装器尾部，安装时放进运行时目录，首次启动自动展开，展开后删除压缩包以节省空间。Platform Tools 固定 `37.0.1` 并校验 SHA1、SHA256；Windows QEMU 固定 Chocolatey `2026.8.11`。依赖许可证和源码再分发的完整性仍需审核。
 
-[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签，标签必须与源码版本一致，例如 `v1.0.20260929`；手动运行只生成 CI artifacts，不发布 Release。发布流程：
+[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签，标签必须与源码版本一致，例如 `v1.0.20260930`；手动运行只生成 CI artifacts，不发布 Release。发布流程：
 
 ```sh
-git tag -a v1.0.20260929 -m "AndroidBox 1.0.20260929"
-git push origin v1.0.20260929
+git tag -a v1.0.20260930 -m "AndroidBox 1.0.20260930"
+git push origin v1.0.20260930
 ```
 
 工作流验证版本后并行构建五份安装包与两份镜像盘，全部通过才创建并发布 Release；失败不会发布缺少附件的版本。每次原生构建都会执行单元测试、Qt/noVNC 冒烟测试与包内 QEMU/ADB 检查，随后再检查 Windows 实际安装目录、macOS 只读挂载的 DMG 或 Linux 解包后的 AppImage。全部成功后生成 `SHA256SUMS`，先上传草稿再公开发布。已发布的 Release 不会被重复运行覆盖；只有发布任务拥有 `contents: write`，不需要签名密钥。进度见 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml)。
 
 | 平台 | 当前版本产物 |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260929-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20260929-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260929-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260929-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20260929-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20260930-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20260930-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20260930-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20260930-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20260930-Linux-aarch64.AppImage` |

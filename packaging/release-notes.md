@@ -1,5 +1,26 @@
 ## AndroidBox Desktop Preview
 
+## AndroidBox 1.0.20260930
+
+The guest now has sound, a microphone and a working camera. QEMU attaches an
+Intel HDA audio device with an output and an input, so Android app media and
+system sounds reach the host speakers, and Android recording, calls and voice
+apps hear the host input device. The guest Ubuntu loads the emulated HDA driver
+and the session joins the `audio` group, which gives its PulseAudio, already
+forwarded into the Android container, a real sound card to play through. Three
+settings, Audio output, Microphone and Camera, switch each device off when it is
+not wanted, and a host whose sound backend refuses to start QEMU loses first the
+microphone and then all sound, rather than losing the guest altogether.
+
+The host webcam is encoded as MJPEG on the host, forwarded through a new QEMU
+port mapping and decoded inside the guest by a camera bridge that writes to a
+v4l2loopback device, which the Android camera app reads at 15 frames per second
+and 640 pixels on the longest edge. Hosts without a webcam, or with the webcam
+already in use, fall back to a still test pattern, so the camera app still opens
+instead of failing. The bridge service is only enabled when a loopback camera
+device exists; otherwise the guest keeps the vivid test pattern device as its
+camera.
+
 ## AndroidBox 1.0.20260929
 
 This release makes the guest reach the network on first boot and cuts input

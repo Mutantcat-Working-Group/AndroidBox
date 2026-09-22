@@ -13,11 +13,12 @@
 - **Bundled System Images**: A complete Android image set (`system` + `vendor`) is packaged per guest architecture on the read-only `androidbox-img` disk, so first boot no longer reaches out to the Waydroid OTA channel.
 - **APK Installation**: Install apps through the authorized ADB, preferring the ADB bundled in the installer.
 - **Out of the Box**: On first start the guest architecture, CPU, memory and disk path are prefilled from the host, so the example disk can be prepared and started without a command line.
+- **Sound and Camera**: An emulated sound card and a V4L2 camera are attached by default, so Android apps, media playback and recording use the host audio devices while the camera app sees the host webcam; hosts without a webcam get a test pattern instead.
 - **Sleep Watchdog**: While running it blocks host lid-close sleep and idle sleep, and restarts the guest automatically if it is interrupted by the host, up to 5 times.
 - **Native Linux Backend**: The Android container approach based on LXC, Binder and Wayland is kept.
 - **Unified App Identity**: The product name is AndroidBox and the application ID is `org.mutantcat.androidbox`.
 
-**Current version: `1.0.20260929`.** Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch. On first start, click **Prepare example guest disk** to prepare an Ubuntu 24.04 minimal guest disk: it downloads the pinned image, verifies the official SHA256, produces a QCOW2 disk the client recognizes automatically, and generates a NoCloud first-boot seed next to the disk. When the official source is unreachable it falls back to domestic mirrors, and **Use a local image** lets you pick an already downloaded image. After boot the cloud init logs in automatically, sets a known password and installs the Android container in one pass, instead of stopping at `ubuntu login:`.
+**Current version: `1.0.20260930`.** Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch. On first start, click **Prepare example guest disk** to prepare an Ubuntu 24.04 minimal guest disk: it downloads the pinned image, verifies the official SHA256, produces a QCOW2 disk the client recognizes automatically, and generates a NoCloud first-boot seed next to the disk. When the official source is unreachable it falls back to domestic mirrors, and **Use a local image** lets you pick an already downloaded image. After boot the cloud init logs in automatically, sets a known password and installs the Android container in one pass, instead of stopping at `ubuntu login:`.
 
 ### 2. Installation
 
@@ -73,6 +74,8 @@ When downloading fails, preparation tries the official source and two domestic m
 
 The toolbar is one icon-only row: Start, Shut down and Install APK on the left, Settings, Logs and Full screen on the right, all icons the same size, with no divider in between. The log pane is collapsed by default and opens from the exclamation button on the right; the run log is also written to `qemu.log` under the application data directory. Dragging a file into the window uploads it to the Android Download directory, and dropping an APK starts its install once the upload finishes. Disks and settings live in `org.mutantcat.androidbox` under the system application data directory, which on macOS is `~/Library/Application Support`.
 
+**Sound and camera**: Settings offers three switches, **Audio output**, **Microphone** and **Camera**, all automatic by default. With sound on, QEMU attaches an Intel HDA card and the guest Ubuntu routes Android audio through PulseAudio to the host speakers, while the microphone feeds the host input device into Android recording, calls and voice apps; when the host sound device is busy or QEMU has no audio backend, the client degrades step by step (drop the microphone first, then all sound) and the guest still boots. With the camera on, the client encodes the default host webcam as MJPEG and pushes it through the QEMU port mapping into the guest camera bridge, which writes it to a V4L2 loopback device for the Android camera app at 15 frames per second and 640 pixels on the longest side; when the host has no webcam, or it is already in use, the guest falls back to a test pattern so the camera app still opens. Setting any of the three to `off` disables that device completely.
+
 ### 4. Focus Areas
 
 - Using the QEMU compatibility layer to bring the Linux native Android container to Windows, macOS and Linux, with a consistent windowed interface and virtual machine management.
@@ -93,10 +96,11 @@ The toolbar is one icon-only row: Start, Shut down and Install APK on the left, 
 - [X] Ubuntu 24.04 example guest disk download, verification and automatic recognition, with NoCloud seed auto-login.
 - [X] Prefill defaults from host resources on first start, so it is usable without a command line.
 - [X] Host sleep watchdog and bounded automatic restart on abnormal guest exit.
+- [X] Guest sound output, microphone input and host webcam frames reaching the Android camera app.
 - [X] The full native CI packaging, self-check and tag-triggered Release flow for five target combinations.
 - [ ] Real hardware acceleration and full Android guest compatibility verification on each platform.
 - [ ] Android pointer positioning, SystemUI startup anomalies and shared storage fixes.
-- [ ] Audio forwarding, GPU acceleration, host clipboard and file sharing.
+- [ ] Further GPU acceleration, host clipboard and file sharing work.
 - [ ] Clean-machine compatibility, complete dependency licenses and source redistribution review.
 
 Guest disk configuration is in [Guest Image Preparation](./docs/guest-image.md), and measured records are in [Verification Records](./docs/verification.md). Upstream projects: [Waydroid](https://github.com/waydroid/waydroid) and [QEMU](https://www.qemu.org/). Please report issues to [issues](https://github.com/Mutantcat-Working-Group/AndroidBox/issues). See [LICENSE](./LICENSE) for the license.
@@ -186,19 +190,19 @@ macOS produces `dist/AndroidBox.app`, Windows/Linux produce a full `dist/Android
 
 The bundled Android images are produced by `scripts/build_system_images.py`. Because makensis cannot compress very large files into its database, the Windows installer appends the compressed image to the installer tail, places it into the runtime directory on install, and expands it on first launch, deleting the compressed archive afterwards to save space. Platform Tools is pinned to `37.0.1` with SHA1 and SHA256 checks, and the Windows QEMU is pinned to Chocolatey `2026.8.11`. Dependency licenses and the completeness of source redistribution still need review.
 
-[Build Desktop Installers](./.github/workflows/desktop.yaml) listens for `v*` tags, and the tag must match the source version, for example `v1.0.20260929`; manual runs only produce CI artifacts and do not publish a Release. The release flow:
+[Build Desktop Installers](./.github/workflows/desktop.yaml) listens for `v*` tags, and the tag must match the source version, for example `v1.0.20260930`; manual runs only produce CI artifacts and do not publish a Release. The release flow:
 
 ```sh
-git tag -a v1.0.20260929 -m "AndroidBox 1.0.20260929"
-git push origin v1.0.20260929
+git tag -a v1.0.20260930 -m "AndroidBox 1.0.20260930"
+git push origin v1.0.20260930
 ```
 
 After verifying the version, the workflow builds five installers and two image disks in parallel, and only creates and publishes the Release when all of them pass; a failure will not publish a version with missing attachments. Every native build runs unit tests, Qt/noVNC smoke tests and in-package QEMU/ADB checks, then inspects the actual Windows install directory, the read-only mounted macOS DMG, or the extracted Linux AppImage. On full success it generates `SHA256SUMS`, uploads a draft first, and only then publishes it publicly. An already published Release is not overwritten by repeat runs; only the publish job holds `contents: write`, and no signing keys are needed. Progress is on the [Actions page](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml).
 
 | Platform | Current Version Artifact |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260929-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20260929-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260929-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260929-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20260929-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20260930-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20260930-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20260930-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20260930-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20260930-Linux-aarch64.AppImage` |

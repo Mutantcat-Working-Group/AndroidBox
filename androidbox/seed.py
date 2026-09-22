@@ -107,7 +107,8 @@ users:
     shell: /bin/bash
     sudo: "ALL=(ALL) NOPASSWD:ALL"
     lock_passwd: false
-    groups: [adm, sudo, dip, plugdev, video, render]
+    # audio gives the session's PulseAudio access to the emulated sound card.
+    groups: [adm, sudo, dip, plugdev, video, render, audio]
 
 chpasswd:
   expire: false

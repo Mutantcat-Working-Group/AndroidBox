@@ -1,6 +1,6 @@
 """Portable QEMU configuration and lifecycle, independent of Qt and Linux tools."""
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 import ctypes
 import json
 import os
@@ -11,9 +11,27 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 
 from .process import popen, run
 from . import bundled, seed
+
+
+def start_attempts(config, driver):
+    """Yield the launch variants to try, richest first.
+
+    A host can refuse one audio device while the rest of the guest boots fine:
+    a sound server that is not running, a microphone another application holds,
+    a screen that has been locked. When QEMU exits over such a device the next
+    variant drops it, so the guest comes up without sound instead of not at all.
+    """
+    yield config, driver
+    if not driver:
+        return
+    if config.microphone != "off":
+        yield replace(config, microphone="off"), driver
+    if config.audio != "off" or config.microphone != "off":
+        yield replace(config, audio="off", microphone="off"), None
 
 
 def normalize_arch(value):
@@ -70,6 +88,15 @@ DISPLAY_QUALITY = ("responsive", "balanced", "sharp")
 # noVNC quality levels: lower numbers trade image sharpness for less encoding
 # work on both ends, which keeps mouse and touch input feeling immediate.
 QUALITY_LEVELS = {"responsive": 3, "balanced": 6, "sharp": 9}
+AUDIO_MODES = ("auto", "off")
+MICROPHONE_MODES = ("auto", "off")
+CAMERA_MODES = ("auto", "off")
+CAMERA_GUEST_PORT = 7100
+# Audio backends each platform offers, best first. QEMU only builds a subset of
+# drivers per host, so the list is filtered against what QEMU reports.
+AUDIO_DRIVERS = {"Darwin": ("coreaudio",), "Windows": ("dsound", "sdl", "pa"),
+                 "Linux": ("pa", "pipewire", "sdl", "alsa")}
+AUDIO_DEVICE_ID = "androidbox-audio"
 
 
 def select_cpu(accelerator, cpu_mode):
@@ -95,6 +122,33 @@ def display_quality_level(quality):
         return QUALITY_LEVELS[quality]
     except KeyError:
         raise ValueError(f"Invalid display quality: {quality}") from None
+
+
+def available_audio_drivers(binary):
+    """Return the audio drivers this QEMU build supports."""
+    result = run([binary, "-audiodev", "help"], timeout=10, check=True)
+    return {line.strip() for line in result.stdout.splitlines()[1:] if line.strip()}
+
+
+def audio_driver(binary, system=None):
+    """Return the best audio backend for this host, or empty when none works."""
+    supported = available_audio_drivers(binary)
+    for name in AUDIO_DRIVERS.get(system or platform.system(), ()):
+        if name in supported:
+            return name
+    return ""
+
+
+def audio_arguments(config, driver):
+    """Return the QEMU audio devices for the requested output and microphone."""
+    if not driver or (config.audio == "off" and config.microphone == "off"):
+        return []
+    arguments = ["-audiodev", f"{driver},id={AUDIO_DEVICE_ID}", "-device", "intel-hda"]
+    if config.audio != "off":
+        arguments += ["-device", f"hda-output,audiodev={AUDIO_DEVICE_ID}"]
+    if config.microphone != "off":
+        arguments += ["-device", f"hda-micro,audiodev={AUDIO_DEVICE_ID}"]
+    return arguments
 
 
 def default_config(discover_disk=True):
@@ -133,6 +187,9 @@ class VMConfig:
     disk_cache: str = "writeback"
     tcg_threads: str = "auto"
     display_quality: str = "balanced"
+    audio: str = "auto"
+    microphone: str = "auto"
+    camera: str = "auto"
 
     def resolved_firmware(self):
         if self.firmware:
@@ -159,7 +216,8 @@ class VMConfig:
         return ""
 
     def validate(self, check_files=True):
-        for name in ("disk", "arch", "firmware", "qemu", "accelerator", "disk_format"):
+        for name in ("disk", "arch", "firmware", "qemu", "accelerator", "disk_format",
+                     "audio", "microphone", "camera"):
             if not isinstance(getattr(self, name), str):
                 raise ValueError(f"{name} must be a string")
         normalize_arch(self.arch)
@@ -179,6 +237,12 @@ class VMConfig:
             raise ValueError("Invalid TCG thread mode")
         if self.display_quality not in DISPLAY_QUALITY:
             raise ValueError("Invalid display quality")
+        if self.audio not in AUDIO_MODES:
+            raise ValueError("Invalid audio mode")
+        if self.microphone not in MICROPHONE_MODES:
+            raise ValueError("Invalid microphone mode")
+        if self.camera not in CAMERA_MODES:
+            raise ValueError("Invalid camera mode")
         if self.disk_format not in {"qcow2", "raw"}:
             raise ValueError("Disk format must be qcow2 or raw")
         if check_files:
@@ -263,7 +327,8 @@ def probe(config):
     return binary, chosen
 
 
-def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_port, adb_port=None):
+def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_port, adb_port=None,
+                  camera_port=None, audio_driver=None):
     config.validate()
     if not 5900 <= vnc_port <= 65535:
         raise ValueError("VNC port must be at least 5900")
@@ -274,6 +339,13 @@ def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_por
     accel = accelerator
     if accelerator == "tcg" and config.tcg_threads != "auto":
         accel = f"tcg,thread={config.tcg_threads}"
+    # Both ADB and the camera ride the same user-mode network: the host side is
+    # a reserved local port, the guest side a port the guest listens on.
+    forwards = ""
+    if adb_port:
+        forwards += f",hostfwd=tcp:127.0.0.1:{adb_port}-:5555"
+    if camera_port:
+        forwards += f",hostfwd=tcp:127.0.0.1:{camera_port}-:{CAMERA_GUEST_PORT}"
     block = {"driver": config.disk_format, "node-name": "os",
              "file": {"driver": "file", "filename": str(Path(config.disk).resolve())}}
     cache = block_cache(config.disk_cache)
@@ -284,10 +356,11 @@ def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_por
                "-blockdev", json.dumps(block), "-device", "virtio-blk-pci,drive=os,bootindex=0",
                "-vga", "none", "-device", display, "-device", "qemu-xhci", "-device", "usb-tablet",
                "-device", "usb-kbd", "-netdev",
-               "user,id=net0" + (f",hostfwd=tcp:127.0.0.1:{adb_port}-:5555" if adb_port else ""),
+               "user,id=net0" + forwards,
                "-device", "virtio-net-pci,netdev=net0",
                "-display", "none", "-vnc", f"127.0.0.1:{vnc_port - 5900},websocket=127.0.0.1:{websocket_port},password=on",
                "-qmp", f"tcp:127.0.0.1:{qmp_port},server=on,wait=off", "-monitor", "none", "-serial", "none"]
+    command += audio_arguments(config, audio_driver)
     seed_iso = seed.seed_path_for(config.disk)
     if seed_iso.is_file():
         command += ["-blockdev", json.dumps({"driver": "raw", "read-only": True,
@@ -357,24 +430,62 @@ class VirtualMachine:
         self.websocket_port = None
         self.password = None
         self.adb_port = None
+        self.camera_port = None
+        self.audio_driver = None
+        self.audio_settings = None
 
     @property
     def running(self):
         return self.process is not None and self.process.poll() is None
 
-    def start(self, config, binary, accelerator, log_path):
+    def start(self, config, binary, accelerator, log_path, audio_driver=None):
         if self.running:
             raise RuntimeError("AndroidBox is already running")
-        vnc_port, self.qmp_port, self.websocket_port, self.adb_port = reserve_ports(4)
-        command = build_command(config, binary, accelerator, vnc_port, self.qmp_port, self.websocket_port, self.adb_port)
+        (vnc_port, self.qmp_port, self.websocket_port, self.adb_port, self.camera_port) = reserve_ports(5)
         self.password = secrets.token_hex(4)  # VNC authentication uses eight characters.
+        log_path = Path(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.log = log_path.open("wb")
-        try:
-            self.process = popen(command, stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT)
-        except Exception:
-            self.close_log()
-            raise
+        attempts = list(start_attempts(config, audio_driver))
+        for index, (settings, driver) in enumerate(attempts):
+            command = build_command(settings, binary, accelerator, vnc_port, self.qmp_port,
+                                    self.websocket_port, self.adb_port, self.camera_port,
+                                    audio_driver=driver)
+            self.log = log_path.open("wb")
+            try:
+                self.process = popen(command, stdin=subprocess.DEVNULL, stdout=self.log,
+                                     stderr=subprocess.STDOUT)
+            except Exception:
+                self.close_log()
+                raise
+            if self.survives_startup():
+                self.audio_settings = settings
+                self.audio_driver = driver
+                return
+            code = self.process.returncode if self.process is not None else None
+            self.terminate()
+            if index == len(attempts) - 1:
+                raise RuntimeError(f"QEMU exited during startup ({code}); see the runtime log")
+
+    def survives_startup(self, seconds=2.0):
+        """True when QEMU stays alive for a moment after it was launched."""
+        deadline = time.monotonic() + seconds
+        while self.running:
+            if time.monotonic() >= deadline:
+                return True
+            time.sleep(0.05)
+        return False
+
+    def describe_audio(self):
+        """A short line naming the sound devices the guest actually received."""
+        if not self.audio_driver:
+            return "guest audio off"
+        settings = self.audio_settings or VMConfig()
+        devices = []
+        if settings.audio != "off":
+            devices.append("speakers")
+        if settings.microphone != "off":
+            devices.append("microphone")
+        return f"{self.audio_driver}: " + (" and ".join(devices) if devices else "no device attached")
 
     def connect_display(self):
         qmp_execute(self.qmp_port, "set_password", {"protocol": "vnc", "password": self.password})

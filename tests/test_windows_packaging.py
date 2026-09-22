@@ -11,7 +11,7 @@ from androidbox import imagesstore
 from scripts import package_desktop
 
 
-VERSION = "1.0.20260929"
+VERSION = "1.0.20260930"
 MAKENSIS = shutil.which("makensis")
 REPO = Path(__file__).resolve().parents[1]
 
@@ -112,7 +112,7 @@ class NsisImagePackageTests(unittest.TestCase):
     def switches(self):
         prefix = "/" if sys.platform == "win32" else "-"
         return [f"{prefix}D{name}" for name in
-                (f"VERSION={VERSION}", "NUMERIC_VERSION=1.0.2026.928",
+                (f"VERSION={VERSION}", "NUMERIC_VERSION=1.0.2026.930",
                  f"PAYLOAD={self.root / 'payload'}", f"OUTPUT={self.target}",
                  f"LICENSE_FILE={REPO / 'LICENSE'}",
                  f"ICON_FILE={REPO / 'packaging/icons/AndroidBox.ico'}",

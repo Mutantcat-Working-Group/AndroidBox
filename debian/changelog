@@ -1,3 +1,16 @@
+androidbox (1.0.20260930) unstable; urgency=medium
+
+  * Give the guest real sound, a microphone and a working camera: QEMU attaches
+    an Intel HDA audio device with output and input, the guest loads the HDA
+    driver and joins the audio group, and its PulseAudio, already forwarded
+    into the Android container, gains a card to play through.
+  * Forward the host webcam as MJPEG to a guest bridge that feeds v4l2loopback,
+    so the Android camera app opens at 15 frames per second; hosts without a
+    usable webcam fall back to a still test pattern.
+  * Add Audio output, Microphone and Camera settings that switch each device
+    off, and start QEMU without the microphone, then without all sound, when
+    the host sound backend refuses the richer configuration.
+
 androidbox (1.0.20260929) unstable; urgency=medium
 
   * Ship a NoCloud network-config with the seed, so cloud-init brings the QEMU

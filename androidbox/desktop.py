@@ -21,14 +21,16 @@ from PySide6.QtWidgets import (
 )
 
 from . import APP_ID, APP_NAME, guestdisk, seed
+from .camera import CameraStreamer
 from .adb import install_apk, transfer_files, executable as adb_executable
 from .display import DisplayServer
 from .icons import icon
 from .power import PowerSession
 from .process import external_environment
 from .runtime import (
-    VMConfig, VirtualMachine, default_config, disk_format, executable, load_config,
-    display_quality_level, normalize_arch, probe, save_config, state_directory,
+    VMConfig, VirtualMachine, audio_driver, default_config, disk_format, executable,
+    load_config, display_quality_level, normalize_arch, probe, save_config,
+    state_directory,
 )
 
 
@@ -146,6 +148,15 @@ class SettingsDialog(QDialog):
             "Display quality. Responsive sends lightly compressed frames so mouse and "
             "touch input feel immediate; sharp costs more encoding work on both ends.")
         form.addRow("Display quality", self.quality)
+        self.audio = self.mode_row(form, "Audio output", config.audio,
+            "Attach a sound card to the guest so Android sounds and app media play "
+            "through this computer's speakers. Off leaves the guest silent.")
+        self.microphone = self.mode_row(form, "Microphone", config.microphone,
+            "Attach a microphone to the guest so voice notes, calls and recording "
+            "apps can hear this computer's input.")
+        self.camera = self.mode_row(form, "Camera", config.camera,
+            "Stream this computer's webcam into the guest so the Android camera app "
+            "sees a live picture. Without a webcam the guest gets a test pattern.")
         self.memory = QSpinBox()
         self.memory.setRange(1024, 262144)
         self.memory.setSingleStep(1024)
@@ -185,6 +196,14 @@ class SettingsDialog(QDialog):
         if selected in values:
             self.cpu_mode.setCurrentText(selected)
 
+    def mode_row(self, form, name, value, tooltip):
+        box = QComboBox()
+        box.addItems(["auto", "off"])
+        box.setCurrentText(value)
+        box.setToolTip(tooltip)
+        form.addRow(name, box)
+        return box
+
     def path_row(self, form, name, value):
         field = QLineEdit(value)
         button = QPushButton()
@@ -214,7 +233,10 @@ class SettingsDialog(QDialog):
                         accelerator=self.accel.currentText(), disk_format=self.format.currentText(),
                         cpu_mode=self.cpu_mode.currentText(), disk_cache=self.cache.currentText(),
                         tcg_threads=self.tcg.currentText(),
-                        display_quality=self.quality.currentText())
+                        display_quality=self.quality.currentText(),
+                        audio=self.audio.currentText(),
+                        microphone=self.microphone.currentText(),
+                        camera=self.camera.currentText())
 
 
 class LocalImageDialog(QDialog):
@@ -269,6 +291,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets/AppIcon.png")))
         self.vm = VirtualMachine()
+        self.camera = None
         self.server = None
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.future = None
@@ -281,6 +304,7 @@ class MainWindow(QMainWindow):
         self.shutdown_requested = False
         self.restarts = 0
         self.recovering = False
+        self.pending_notes = []
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(2000)
@@ -570,7 +594,15 @@ class MainWindow(QMainWindow):
         config = replace(self.config)
         def start():
             binary, accelerator = probe(config)
-            self.vm.start(config, binary, accelerator, self.log_path)
+            driver = ""
+            if config.audio != "off" or config.microphone != "off":
+                # A host without a working sound backend must still boot the guest;
+                # the worker thread only collects the note, never touches a widget.
+                try:
+                    driver = audio_driver(binary)
+                except (OSError, subprocess.SubprocessError) as error:
+                    self.pending_notes.append(f"Host sound is unavailable: {error}")
+            self.vm.start(config, binary, accelerator, self.log_path, audio_driver=driver)
             try:
                 for _ in range(60):
                     if not self.vm.running:
@@ -654,6 +686,13 @@ class MainWindow(QMainWindow):
                     shield_drag_and_drop(self.view)
                     self.stack.setCurrentIndex(1)
                     self.report(f"QEMU running | {self.config.arch} | {result.upper()}")
+                    for note in self.pending_notes:
+                        self.report(note)
+                    self.pending_notes.clear()
+                    if self.vm.audio_driver:
+                        self.report(f"Guest sound: {self.vm.describe_audio()}")
+                    if self.config.camera != "off":
+                        self.start_camera()
                 elif operation == "stop":
                     self.report("Shutdown requested" if self.vm.running else "Stopped")
                 elif operation == "prepare":
@@ -701,6 +740,25 @@ class MainWindow(QMainWindow):
         if self.server:
             self.server.close()
             self.server = None
+        self.stop_camera()
+
+    def start_camera(self):
+        """Point the host webcam at the guest camera bridge."""
+        if self.camera is not None or not self.vm.running:
+            return
+        self.camera = CameraStreamer(self.vm.camera_port, self)
+        signal = getattr(self.camera, "status", None)
+        if signal is not None:
+            signal.connect(self.report)
+        if not self.camera.start():
+            self.camera = None
+
+    def stop_camera(self):
+        """Release the webcam and drop the stream into the guest."""
+        if self.camera is None:
+            return
+        streamer, self.camera = self.camera, None
+        streamer.stop()
 
     def recover_guest(self, code):
         """Start the guest again after an exit the user did not ask for.

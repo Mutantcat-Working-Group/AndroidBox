@@ -16,7 +16,14 @@ source_dir=$(cd -- "$(dirname -- "$0")/.." && pwd)
 apt-get update
 apt-get install -y make lxc python3 python3-dbus python3-gi python3-setuptools \
     gir1.2-gtk-3.0 polkitd dbus-user-session pulseaudio iptables dnsmasq-base \
-    cage greetd socat curl ca-certificates apparmor apparmor-utils
+    cage greetd socat curl ca-certificates apparmor apparmor-utils ffmpeg
+# The emulated sound card and the loopback camera ship their drivers in the
+# kernel packages. Best-effort on purpose: a guest whose cloud image carries a
+# trimmed kernel keeps booting, it just comes up without sound or camera.
+apt-get install -y "linux-modules-$(uname -r)" \
+    "linux-modules-extra-$(uname -r)" v4l2loopback-dkms "linux-headers-$(uname -r)" \
+    2>/dev/null || \
+    echo "WARNING: kernel modules or v4l2loopback could not be installed" >&2
 
 # Ubuntu noble has no gbinder packages, so build the binder stack from the
 # vendored sources. Best-effort on purpose: if the build fails the guest still
@@ -52,6 +59,10 @@ if ! modprobe binder_linux devices=binder,hwbinder,vndbinder; then
     exit 1
 fi
 install -m 0644 "$source_dir/guest/binder.conf" /etc/modules-load.d/androidbox.conf
+# The emulated HDA controller is normally autoloaded from PCI, but a trimmed
+# cloud kernel can miss it, and without a driver PulseAudio has no sound card
+# to play the Android audio the host forwards through QEMU.
+echo "snd-hda-intel" >> /etc/modules-load.d/androidbox.conf
 # binderfs only creates the node names handed to the module, and the Android
 # container expects /dev/binder exactly. Without the persistent options every
 # reboot reloads binder_linux with its default names (anbox-binder and friends),
@@ -59,6 +70,24 @@ install -m 0644 "$source_dir/guest/binder.conf" /etc/modules-load.d/androidbox.c
 cat > /etc/modprobe.d/androidbox.conf <<'EOF'
 options binder_linux devices=binder,hwbinder,vndbinder
 EOF
+
+# Android needs a video capture device. A v4l2loopback node is preferred
+# because the host webcam can be streamed into it by the desktop client; the
+# vivid fallback only shows a test pattern, but it still hands every camera app
+# a device that opens and streams instead of failing outright.
+camera_device=""
+if modprobe v4l2loopback video_nr=0 card_label="AndroidBox Camera" exclusive_caps=1 max_buffers=2; then
+    cat > /etc/modprobe.d/androidbox-video.conf <<'EOF'
+options v4l2loopback video_nr=0 card_label="AndroidBox Camera" exclusive_caps=1 max_buffers=2
+EOF
+    printf 'v4l2loopback\n' > /etc/modules-load.d/androidbox-video.conf
+    camera_device=/dev/video0
+elif modprobe vivid; then
+    printf 'vivid\n' > /etc/modules-load.d/androidbox-video.conf
+    echo "WARNING: v4l2loopback unavailable; the camera shows a test pattern only." >&2
+else
+    echo "WARNING: no video capture driver could be loaded." >&2
+fi
 
 # Release builds carry the Android archives on a read-only block device, so a
 # fresh install never depends on the guest network reaching the OTA channels.
@@ -114,10 +143,13 @@ install_preinstalled_images || \
 
 make -C "$source_dir" install install_apparmor
 id androidbox >/dev/null 2>&1 || useradd --create-home --shell /bin/bash androidbox
-usermod -a -G video,render androidbox
+usermod -a -G video,render,audio androidbox
 install -m 0755 "$source_dir/guest/session.sh" /usr/local/bin/androidbox-guest-session
 install -m 0755 "$source_dir/guest/adb-forward.sh" /usr/local/bin/androidbox-adb-forward
 install -m 0644 "$source_dir/guest/adb-forward.service" /etc/systemd/system/androidbox-adb-forward.service
+install -d /usr/local/lib/androidbox
+install -m 0644 "$source_dir/guest/camera-bridge.py" /usr/local/lib/androidbox/camera-bridge.py
+install -m 0644 "$source_dir/guest/camera-bridge.service" /etc/systemd/system/androidbox-camera-bridge.service
 install -m 0644 "$source_dir/guest/greetd.toml" /etc/greetd/config.toml
 
 androidbox init
@@ -134,10 +166,14 @@ if not config.has_section('properties'):
 config['properties']['ro.hardware.gralloc'] = 'default'
 config['properties']['ro.hardware.egl'] = 'swiftshader'
 config['properties']['persist.waydroid.multi_windows'] = 'false'
+config['properties']['ro.hardware.camera'] = 'v4l2'
 with path.open('w') as stream:
     config.write(stream)
 PY
 androidbox upgrade -o
 systemctl daemon-reload
 systemctl enable androidbox-container.service androidbox-adb-forward.service greetd.service
+if [[ -n $camera_device ]]; then
+    systemctl enable androidbox-camera-bridge.service
+fi
 echo "Guest provisioned. Reboot this VM; first Android boot may take several minutes."
