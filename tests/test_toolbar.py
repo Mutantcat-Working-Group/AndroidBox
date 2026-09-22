@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import sys
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -117,8 +118,10 @@ class MainWindowToolbarTests(unittest.TestCase):
         toolbar = window.findChildren(QToolBar)[0]
         self.assertFalse(any(action.isSeparator() for action in toolbar.actions()))
         self.assertEqual(toolbar.iconSize(), QSize(TOOLBAR_ICON_SIZE, TOOLBAR_ICON_SIZE))
-        # Six icon-only buttons: three runtime controls, three window controls.
-        self.assertEqual(len(button_actions(toolbar)), 6)
+        # Icon-only buttons: three runtime controls, three window controls, and
+        # the Linux native button on Linux alone.
+        expected = 7 if sys.platform.startswith("linux") else 6
+        self.assertEqual(len(button_actions(toolbar)), expected)
         self.assertEqual(toolbar.toolButtonStyle(), Qt.ToolButtonIconOnly)
         window.close()
 

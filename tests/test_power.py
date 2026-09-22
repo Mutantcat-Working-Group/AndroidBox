@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -40,16 +41,27 @@ class PowerSessionTests(unittest.TestCase):
         self.assertFalse(self.session.held)
 
     def test_a_missing_helper_holds_nothing(self):
-        with patch.object(power, "_spawn", return_value=None):
-            self.assertEqual(self.session.acquire(), "")
+        if sys.platform == "win32":
+            # Windows holds the wake lock in-process instead of via a helper.
+            with patch.object(power, "_windows_stay_awake", side_effect=OSError("denied")):
+                self.assertEqual(self.session.acquire(), "")
+        else:
+            with patch.object(power, "_spawn", return_value=None):
+                self.assertEqual(self.session.acquire(), "")
         self.assertFalse(self.session.held)
         self.assertIsNone(self.session.process)
 
     def test_a_held_helper_is_acquired_once(self):
-        with patch.object(power, "_spawn", return_value=StubbornHelper()) as spawn:
-            first = self.session.acquire()
-            second = self.session.acquire()
-        self.assertEqual(spawn.call_count, 1)
+        if sys.platform == "win32":
+            with patch.object(power, "_windows_stay_awake") as stay_awake:
+                first = self.session.acquire()
+                second = self.session.acquire()
+            self.assertEqual(stay_awake.call_count, 1)
+        else:
+            with patch.object(power, "_spawn", return_value=StubbornHelper()) as spawn:
+                first = self.session.acquire()
+                second = self.session.acquire()
+            self.assertEqual(spawn.call_count, 1)
         self.assertEqual(first, second)
         self.assertTrue(first)
 
