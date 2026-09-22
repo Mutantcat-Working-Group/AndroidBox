@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import APP_ID, APP_NAME, guestdisk, seed
-from .adb import install_apk, executable as adb_executable
+from .adb import install_apk, transfer_files, executable as adb_executable
 from .display import DisplayServer
 from .icons import icon
 from .power import PowerSession
@@ -69,6 +69,36 @@ def build_toolbar(owner, toolbar, ink, brand, left_buttons, right_buttons):
     for button in right_buttons:
         add(button)
     return actions
+
+
+def shield_drag_and_drop(widget):
+    """Stop every widget inside the guest screen from eating drag events.
+
+    The browser engine accepts drags for its own web content; leaving those
+    widgets non-droppable lets the main window receive file drops that are
+    dragged over the running screen.
+    """
+    widget.setAcceptDrops(False)
+    for child in widget.findChildren(QWidget):
+        child.setAcceptDrops(False)
+
+
+class DisplayView(QWebEngineView):
+    """The guest screen, which never handles drag and drop itself."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Chromium turns drops on by default to grab files for web content.
+        self.setAcceptDrops(False)
+
+    def dragEnterEvent(self, event):
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        event.ignore()
+
+    def dropEvent(self, event):
+        event.ignore()
 
 
 class SettingsDialog(QDialog):
@@ -229,12 +259,14 @@ class LocalImageDialog(QDialog):
 
 class MainWindow(QMainWindow):
     prepare_progress = Signal(int, int)
+    transfer_progress = Signal(str)
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.resize(1120, 780)
         self.setMinimumSize(640, 480)
+        self.setAcceptDrops(True)
         self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets/AppIcon.png")))
         self.vm = VirtualMachine()
         self.server = None
@@ -336,7 +368,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(prepare_row)
         layout.addStretch()
         self.stack.addWidget(empty)
-        self.view = QWebEngineView()
+        self.view = DisplayView()
+        shield_drag_and_drop(self.view)
         self.view.setContextMenuPolicy(Qt.NoContextMenu)
         self.stack.addWidget(self.view)
         splitter = QSplitter(Qt.Vertical)
@@ -345,7 +378,9 @@ class MainWindow(QMainWindow):
         splitter.setSizes([600, 140])
         self.setCentralWidget(splitter)
         self.log.hide()
+        shield_drag_and_drop(self.log)
         self.prepare_progress.connect(self.on_prepare_progress)
+        self.transfer_progress.connect(self.on_transfer_progress)
         self.update_empty_state()
         self.statusBar().showMessage("Stopped")
         self.timer = QTimer(self)
@@ -375,6 +410,57 @@ class MainWindow(QMainWindow):
         box.setText(summary)
         box.setDetailedText(str(error))
         box.exec()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # The guest screen builds its browser child widgets lazily; re-apply
+        # the shield so the freshly created ones cannot eat drops either.
+        shield_drag_and_drop(self.view)
+
+    def dragEnterEvent(self, event):
+        self.offer_drop(event)
+
+    def dragMoveEvent(self, event):
+        self.offer_drop(event)
+
+    def offer_drop(self, event):
+        mime = event.mimeData()
+        if mime is not None and mime.hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        mime = event.mimeData()
+        paths = [url.toLocalFile() for url in mime.urls() if url.isLocalFile()] if mime is not None else []
+        files = [path for path in paths if Path(path).is_file()]
+        if not files:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.upload_files(files)
+
+    def upload_files(self, paths):
+        """Copy dragged files into the guest and install any APK among them."""
+        if not self.vm.running:
+            QMessageBox.warning(self, APP_NAME, "Start the guest before uploading files to it.")
+            return
+        if self.future is not None:
+            QMessageBox.warning(self, APP_NAME, "Wait for the current operation to finish before uploading.")
+            return
+        adb = adb_executable()
+        if not adb:
+            QMessageBox.warning(self, APP_NAME, "ADB not found. Install Android SDK Platform Tools and add adb to PATH.")
+            return
+        target = f"127.0.0.1:{self.vm.adb_port}"
+        self.operation = "upload"
+        self.future = self.pool.submit(transfer_files, adb, target, paths,
+                                       progress=self.transfer_progress.emit)
+        self.report(f"Uploading {len(paths)} file(s) to the guest Download directory")
+        self.update_actions()
+
+    def on_transfer_progress(self, message):
+        self.report(message)
 
     def update_actions(self):
         busy = self.future is not None
@@ -565,6 +651,7 @@ class MainWindow(QMainWindow):
                     self.view.setUrl(QUrl(
                         f"{self.server.url}#port={self.vm.websocket_port}"
                         f"&password={self.vm.password}&quality={quality}"))
+                    shield_drag_and_drop(self.view)
                     self.stack.setCurrentIndex(1)
                     self.report(f"QEMU running | {self.config.arch} | {result.upper()}")
                 elif operation == "stop":

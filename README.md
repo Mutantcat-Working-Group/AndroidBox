@@ -71,7 +71,7 @@ Linux 原生容器后端依赖 LXC、支持 Binder 的内核、Wayland、D-Bus�
 
 **默认参数**：首次启动按宿主架构填写客体架构，CPU 取逻辑核心数的一半（1–6 核），内存取总内存一半并按 GiB 向下取整（1–6 GiB），检测失败时用 2 核、2 GiB；已有设置不会被覆盖。QEMU 与 ARM 固件自动查找，手动填写的路径优先。可调项还有 CPU 型号（host/max/qemu64）、TCG 线程数（单线程/多线程）、磁盘缓存（writeback/none/unsafe）和显示质量（responsive/balanced/sharp，画质越低编码越少、操作越跟手），默认值保持原有行为，实测数据见 [性能与游戏](./docs/performance.md)。
 
-工具栏是一列纯图标：左侧依次为启动、关机、安装 APK，右侧依次为设置、日志、全屏，两侧图标大小一致，中间没有分割线；日志栏默认收起，点右侧感叹号图标展开。运行日志同时写入应用数据目录下的 `qemu.log`。磁盘与设置位于系统应用数据目录的 `org.mutantcat.androidbox`，macOS 为 `~/Library/Application Support`。
+工具栏是一列纯图标：左侧依次为启动、关机、安装 APK，右侧依次为设置、日志、全屏，两侧图标大小一致，中间没有分割线；日志栏默认收起，点右侧感叹号图标展开。把文件拖进窗口即会上传到 Android 的 Download 目录，拖入 APK 时推送完成后会自动触发安装。运行日志同时写入应用数据目录下的 `qemu.log`。磁盘与设置位于系统应用数据目录的 `org.mutantcat.androidbox`，macOS 为 `~/Library/Application Support`。
 
 ### 四、专注的点
 
