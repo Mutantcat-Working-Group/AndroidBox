@@ -725,3 +725,67 @@ executor per boot, retries automatically when a download fails, and leaves the
 older `runcmd -> script` path behind. The literal-block round trip is covered by
 `test_user_data_firstboot_script_survives_parsing`, which now also asserts the
 unit file and the enable command.
+
+## Bundled Android Images (2026-09-22)
+
+Installed builds stopped at `ubuntu login:` for three stacked reasons. The seed
+and cloud-init work of 1.0.20260926/27 fixed the first two; the third only
+appeared after a reboot and is fixed here.
+
+1. The seed could not provision the guest at all (block-scalar indentation,
+   version-less `instance-id`) -- already addressed.
+2. The guest could not build the gbinder stack: Ubuntu noble has no
+   `python3-gbinder` package. `guest/provision.sh` now installs
+   `python3-setuptools` and compiles the vendored `libglibutil`,
+   `libgbinder` and `python-gbinder` sources (`guest/vendor/`), best-effort with
+   a warning so a failed build degrades instead of blocking the boot.
+3. `modprobe binder_linux devices=binder,hwbinder,vndbinder` is not persistent.
+   After a reboot the module loaded with its default names (`anbox-binder` and
+   friends), so `/dev/binder` did not exist and the container logged
+   `[gbinder] ERROR: Can't open /dev/binder: No such file or directory` forever.
+   `guest/provision.sh` now writes
+   `/etc/modprobe.d/androidbox.conf` with the same options, and the live guest
+   confirmed the fix: after the reboot `/dev/binder -> /dev/binderfs/binder`
+   exists, the container is RUNNING, and `androidbox status` reports
+   `Session: RUNNING`, `IP 192.168.240.112` with `cage`, `zygote64` and
+   `com.android.systemui` in the process list. The Android launcher renders.
+
+Because first boot could still not reach `ota.waydro.id` on a locked-down host
+(the bundled CA bundle rejected the chain:
+`[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate`), the
+Android archives are now shipped inside every installer. The earlier "measured
+and rejected" note above was wrong about the requirement: the Android system is
+the product, so it cannot be an optional download.
+
+`scripts/build_system_images.py` reads the same Waydroid OTA channels the client
+used (`lineage/waydroid_{arch}/VANILLA.json` for the system and
+`waydroid_{arch}/MAINLINE.json` for the vendor image), refuses any entry whose
+SHA256 does not match the published `id`, stages `system.zip`, `vendor.zip`,
+`SHA256SUMS` and `manifest.json`, and packs them onto an ext4 filesystem. The
+disk is then shrunk with `resize2fs -M` and verified with `e2fsck -fn`, so it is
+attached read-only by `androidbox/runtime.py` (`bootindex=2`, after the guest
+disk and the NoCloud seed). A local build was inspected with `dumpe2fs` and
+`debugfs`: the label survives, the filesystem is clean and the archives sit at
+the filesystem root where the guest expects them.
+
+Two host details worth remembering:
+
+- ext4 keeps only 16 bytes of label. `androidbox-images` is 17 characters and
+  `mke2fs` silently truncated it to `androidbox-image`, which would have broken
+  `blkid -L` in the guest. The label is now `androidbox-img`, and
+  `tests/test_branding.py` pins the guest side of that contract.
+- `resize2fs` prints `... is now N (4k) blocks long.`, so the block count is
+  parsed with a regex over both streams rather than the last token.
+
+On the guest side `install_preinstalled_images()` polls `blkid -L androidbox-img`
+for up to 30 seconds, mounts it read-only, runs `sha256sum --status -c
+SHA256SUMS`, and unzips both archives into
+`/usr/share/androidbox-extra/images`. `tools/config/__init__.py` already lists
+that directory in `preinstalled_images_paths`, so `androidbox init` skips the
+channel downloads entirely. Any failure falls back to the OTA path, and disks
+provisioned earlier are migrated from `/var/lib/androidbox/images`.
+
+The frozen self-test reports the bundled disk, and every CI installer check
+(`--require-runtime --require-images`) now proves the images actually reached the
+package: the built executable, the mounted DMG, the installed Windows copy and
+the extracted AppImage.

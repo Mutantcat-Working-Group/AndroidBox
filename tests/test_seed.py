@@ -56,6 +56,9 @@ class SeedTests(unittest.TestCase):
                 names = tar.getnames()
         self.assertIn("androidbox/guest/provision.sh", names)
         self.assertIn("androidbox/Makefile", names)
+        self.assertIn("androidbox/guest/vendor/libglibutil/Makefile", names)
+        self.assertIn("androidbox/guest/vendor/libgbinder/Makefile", names)
+        self.assertIn("androidbox/guest/vendor/python-gbinder/setup.py", names)
         self.assertTrue(any(name.startswith("androidbox/tools/") for name in names))
 
     def test_write_payload_archive_is_deterministic(self):
@@ -106,7 +109,10 @@ class SeedTests(unittest.TestCase):
                                   "[ systemctl, restart, getty@tty1.service ]",
                                   "[ systemctl, enable, --now, androidbox-firstboot.service ]"])
         unit = self.content_of(lines, "/etc/systemd/system/androidbox-firstboot.service")
-        self.assertIn("ConditionPathExists=!/var/lib/androidbox/.provisioned", unit)
+        self.assertIn("ConditionPathExists=!/var/lib/androidbox/.provisioned-", unit)
+        # A bare marker would freeze an old first-boot result on disks that
+        # already booted, so the version has to reach the unit condition.
+        self.assertNotIn("ConditionPathExists=!/var/lib/androidbox/.provisioned\n", unit)
         self.assertIn("ExecStart=/usr/local/bin/androidbox-firstboot", unit)
         self.assertIn("WantedBy=multi-user.target", unit)
 

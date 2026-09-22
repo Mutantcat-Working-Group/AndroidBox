@@ -14,7 +14,7 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 - **原生 Linux 后端**：保留基于 LXC、Binder 和 Wayland 的 Android 容器运行方式。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 
-**当前版本：`1.0.20260927`。** 安装包构建流程已配置内置 Python、Qt、noVNC、QEMU 和 ADB；完整 Android 磁盘体积过大（每架构 220–250 MiB，且几乎无法压缩），不放入安装包。首次启动点击界面上的 **Prepare example guest disk** 即可：下载固定版本 Ubuntu 24.04 minimal 镜像、校验官方 SHA256，并生成客户端可自动识别的 QCOW2 磁盘，同时在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退到国内镜像，也可用 **Use a local image** 选择已下载的镜像。本次版本为示例盘接入首次引导种子：开机后云端初始化会自动登录、设置已知密码并一次性安装 Android 容器（首次启动需数分钟），不再停留在 `ubuntu login:`；示例盘底层格式识别错误导致的 UEFI Shell 启动问题仍会在启动前自动修复。
+**当前版本：`1.0.20260928`。** 安装包内置 Python、Qt、noVNC、QEMU、ADB，以及按客体架构打包的整套 Android 系统镜像（`system` + `vendor`，位于只读 `androidbox-img` 磁盘上），首次开机不再访问 Waydroid OTA 渠道，也不再依赖宿主 CA 证书。首次启动点击界面上的 **Prepare example guest disk** 即可准备 Ubuntu 24.04 minimal 客体盘：下载固定版本镜像、校验官方 SHA256，并生成客户端可自动识别的 QCOW2 磁盘，同时在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退到国内镜像，也可用 **Use a local image** 选择已下载的镜像。开机后云端初始化会自动登录、设置已知密码并一次性安装 Android 容器（首次启动需数分钟），不再停留在 `ubuntu login:`；示例盘底层格式识别错误导致的 UEFI Shell 启动问题仍会在启动前自动修复。
 
 ### 二、平台支持
 
@@ -42,12 +42,12 @@ AndroidBox 是基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 
 
 #### 桌面安装包
 
-最近发布的完整版本是 [v1.0.20260927](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260927)，包含五平台安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35585959790) 已通过；当前源码版本为 `1.0.20260927`。
+最近发布的完整版本是 [v1.0.20260928](https://github.com/Mutantcat-Working-Group/AndroidBox/releases/tag/v1.0.20260928)，包含五平台安装包及 `SHA256SUMS`。[标签触发的完整发布流水线](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/runs/35585959790) 已通过；当前源码版本为 `1.0.20260928`。
 
 1. 选择对应系统和架构的安装包，安装或启动 AndroidBox。
 2. 首次打开会提示没有客体磁盘，点击 **Prepare example guest disk**。程序下载官方 Ubuntu 24.04 minimal 镜像、校验 SHA256，并在应用数据目录生成客户端可自动识别的 `androidbox-架构.qcow2`，全程不需要命令行。若所在网络访问官方源失败，可改用 **Use a local image** 选择已下载的同名镜像，校验方式完全相同。
 3. 准备完成后点击 **Start**，程序自动选中刚生成的磁盘并进入运行视图；与宿主不同架构的客体仍需在设置中选择架构。
-4. 第一次开机由云端初始化自动登录并安装 Android 容器（下载 Android 镜像、安装 Binder 模块并运行 `guest/provision.sh`，通常需要几分钟，完成后自动重启进入 Android 会话）；安装 APK 前，在 Android 中确认 ADB 授权提示。
+4. 第一次开机由云端初始化自动登录并安装 Android 容器（安装包已内置 Android 镜像，安装 Binder 模块并运行 `guest/provision.sh`，通常需要几分钟，完成后自动重启进入 Android 会话）；安装 APK 前，在 Android 中确认 ADB 授权提示。
 
 客体系统账户为 `ubuntu`，默认密码为 **`androidbox`**，控制台会自动登录，无需手动输入。首次开机由种子自动完成客体配置；如需手动配置或使用自选磁盘，仍可参考 [客体镜像文档](./docs/guest-image.md)。
 
@@ -149,26 +149,26 @@ macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整的 `dist/Android
 
 #### GitHub Actions 发布
 
-[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签。标签必须与源码版本一致，例如 `v1.0.20260927`；手动运行仅生成 CI artifacts，不发布 Release。只推送 `main` 或修改版本字符串不会触发安装包发布。
+[Build Desktop Installers](./.github/workflows/desktop.yaml) 监听 `v*` 标签。标签必须与源码版本一致，例如 `v1.0.20260928`；手动运行仅生成 CI artifacts，不发布 Release。只推送 `main` 或修改版本字符串不会触发安装包发布。
 
 发布者在版本修改提交并推送后执行：
 
 ```sh
-git tag -a v1.0.20260927 -m "AndroidBox 1.0.20260927"
-git push origin v1.0.20260927
+git tag -a v1.0.20260928 -m "AndroidBox 1.0.20260928"
+git push origin v1.0.20260928
 ```
 
 工作流验证版本后并行构建五份安装包，全部验证通过才创建并发布 Release；失败时不会发布缺少附件的版本。进度可在仓库的 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml) 查看。
 
 | 平台 | 当前版本产物 |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20260927-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20260927-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20260927-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20260927-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20260927-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20260928-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20260928-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20260928-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20260928-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20260928-Linux-aarch64.AppImage` |
 
-每个平台还随附一份免安装便携包 `AndroidBox-1.0.20260927-<平台>-<架构>.tar.gz`（解压即可运行），与安装包一同校验、上传和发布。
+每个平台还随附一份免安装便携包 `AndroidBox-1.0.20260928-<平台>-<架构>.tar.gz`（解压即可运行），与安装包一同校验、上传和发布。
 
 每个原生构建执行单元测试、Qt/noVNC 冒烟测试，以及包内 QEMU/ADB 检查；随后再次检查 Windows 实际安装目录、macOS 只读挂载的 DMG 或 Linux 解包后的 AppImage。Windows 安装测试使用含空格路径，并在结束后卸载。
 

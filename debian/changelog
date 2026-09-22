@@ -1,4 +1,18 @@
-androidbox (1.0.20260927-1) unstable; urgency=medium
+androidbox (1.0.20260928) unstable; urgency=medium
+
+  * Ship the guest Android images inside every installer on a read-only ext4
+    disk labelled androidbox-img, so a fresh install provisions Android without
+    reaching the Waydroid OTA channels or trusting the host CA bundle.
+  * Persist the binder_linux device names through /etc/modprobe.d, so reboots
+    keep /dev/binder and the Android container starts again unattended.
+  * Build the in-guest gbinder stack from vendored sources on Ubuntu noble,
+    which publishes no python3-gbinder package.
+  * Report the bundled image disk through the frozen self-test and require it
+    in every CI installer verification step.
+
+ -- tyza66 <shun_@outlook.com>  Tue, 22 Sep 2026 09:00:00 +0800
+
+androidbox (1.0.20260927) unstable; urgency=medium
 
   * Carry the seed version in the NoCloud instance-id so cloud-init re-runs its
     per-instance modules (write_files, runcmd) when the seed changes. Identity
@@ -10,7 +24,7 @@ androidbox (1.0.20260927-1) unstable; urgency=medium
 
  -- tyza66 <shun_@outlook.com>  Wed, 23 Sep 2026 09:00:00 +0800
 
-androidbox (1.0.20260926-1) unstable; urgency=medium
+androidbox (1.0.20260926) unstable; urgency=medium
 
   * Fix the first-boot provisioning script embedded in the NoCloud seed: the
     block-scalar indenter joined the script's lines without newlines, so the
@@ -22,7 +36,7 @@ androidbox (1.0.20260926-1) unstable; urgency=medium
 
  -- tyza66 <shun_@outlook.com>  Tue, 22 Sep 2026 15:00:00 +0800
 
-androidbox (1.0.20260925-1) unstable; urgency=medium
+androidbox (1.0.20260925) unstable; urgency=medium
 
   * Attach a NoCloud cidata seed to managed guest disks so first boot logs in
     automatically and provisions the Android guest without manual steps.
@@ -31,7 +45,7 @@ androidbox (1.0.20260925-1) unstable; urgency=medium
 
  -- tyza66 <shun_@outlook.com>  Tue, 22 Sep 2026 13:30:00 +0800
 
-androidbox (1.0.20260923-1) unstable; urgency=medium
+androidbox (1.0.20260923) unstable; urgency=medium
 
   * Fix UEFI Shell boots by writing and repairing the QCOW2 backing format
     recorded in managed overlays; Ubuntu minimal cloud images are themselves
@@ -41,7 +55,7 @@ androidbox (1.0.20260923-1) unstable; urgency=medium
 
  -- tyza66 <shun_@outlook.com>  Mon, 21 Sep 2026 13:30:00 +0800
 
-androidbox (1.0.20260922-1) unstable; urgency=medium
+androidbox (1.0.20260922) unstable; urgency=medium
 
   * Anchor guest disk downloads to the bundled CA store, fixing the
     certificate verification failure on machines without the build host's
@@ -52,20 +66,20 @@ androidbox (1.0.20260922-1) unstable; urgency=medium
 
  -- tyza66 <shun_@outlook.com>  Mon, 21 Sep 2026 09:22:00 +0800
 
-androidbox (1.0.20260921-1) unstable; urgency=medium
+androidbox (1.0.20260921) unstable; urgency=medium
 
   * Add verified Ubuntu 24.04 example guest disk preparation tool.
 
  -- tyza66 <shun_@outlook.com>  Sun, 20 Sep 2026 12:00:00 +0800
 
-androidbox (1.0.20260920-1) unstable; urgency=medium
+androidbox (1.0.20260920) unstable; urgency=medium
 
   * Publish bundled desktop installers for Windows, macOS and Linux.
   * Detect first-launch defaults and collapse logs by default.
 
  -- tyza66 <shun_@outlook.com>  Sun, 20 Sep 2026 12:00:00 +0800
 
-androidbox (1.0.20260919-1) unstable; urgency=medium
+androidbox (1.0.20260919) unstable; urgency=medium
 
   * Rebrand host runtime and desktop IDs as AndroidBox / org.mutantcat.androidbox.
   * Keep upstream Android image protocols for compatibility.

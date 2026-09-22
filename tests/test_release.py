@@ -1,4 +1,5 @@
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -15,7 +16,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("'\"$INSTDIR\\Uninstall.exe\" /S'", installer)
 
     def test_source_versions_match_requested_release(self):
-        self.assertEqual(validate_versions(ROOT, "v1.0.20260927"), "1.0.20260927")
+        version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+        self.assertEqual(validate_versions(ROOT, f"v{version}"), version)
 
     def test_mismatched_or_unsafe_tag_is_rejected(self):
         for tag in ("v1.0.20260919", "1.0.20260920", "v1.0.20260920;echo bad"):

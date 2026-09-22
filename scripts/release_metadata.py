@@ -35,7 +35,7 @@ def validate_versions(root, tag=None):
     for relative, name in (("androidbox/__init__.py", "__version__"), ("tools/config/__init__.py", "version")):
         if assignment(root / relative, name) != version:
             raise ValueError(f"Version mismatch in {relative}")
-    if not (root / "debian/changelog").read_text(encoding="utf-8").startswith(f"androidbox ({version}-1)"):
+    if not (root / "debian/changelog").read_text(encoding="utf-8").startswith(f"androidbox ({version})"):
         raise ValueError("Version mismatch in Debian changelog")
     if tag is not None and tag != f"v{version}":
         raise ValueError(f"Tag must equal v{version}")

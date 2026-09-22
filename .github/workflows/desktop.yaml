@@ -46,8 +46,38 @@ jobs:
         run: python -m unittest discover -s tests -v
       - run: ruff check .
 
+  images:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install disk image tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs
+      - name: Build the bundled Android image disk
+        run: |
+          set -euo pipefail
+          python scripts/build_system_images.py --arch ${{ matrix.arch }} \
+            --output "dist-images/androidbox-images-${{ matrix.arch }}.raw"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: androidbox-images-${{ matrix.arch }}
+          path: dist-images/*.raw
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
   build:
-    needs: validate
+    needs: [validate, images]
     strategy:
       fail-fast: false
       matrix:
@@ -63,7 +93,7 @@ jobs:
           - os: windows-2022
             arch: x86_64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -111,6 +141,15 @@ jobs:
       - name: Select bundled ADB path
         shell: bash
         run: echo "ANDROIDBOX_ADB_DIRECTORY=$GITHUB_WORKSPACE/build/platform-tools" >> "$GITHUB_ENV"
+      - name: Download the bundled Android image disk
+        uses: actions/download-artifact@v4
+        with:
+          pattern: androidbox-images-*
+          merge-multiple: true
+          path: images
+      - name: Select the bundled Android image disk
+        shell: bash
+        run: echo "ANDROIDBOX_IMAGES_RAW=$GITHUB_WORKSPACE/images/androidbox-images-${{ matrix.arch }}.raw" >> "$GITHUB_ENV"
       - run: python scripts/fetch_novnc.py
       - run: python -m pip install '.[desktop,build]'
       - run: python -m PyInstaller packaging/desktop.spec --noconfirm
@@ -123,7 +162,7 @@ jobs:
             Windows) target='dist/AndroidBox/AndroidBox.exe' ;;
             *) target='dist/AndroidBox/AndroidBox' ;;
           esac
-          python scripts/verify_frozen.py "$target" --require-runtime
+          python scripts/verify_frozen.py "$target" --require-runtime --require-images
       - name: Create installer
         shell: bash
         run: |
@@ -148,7 +187,7 @@ jobs:
           tar -czf "dist/installers/AndroidBox-$version-$os_name-$arch.tar.gz" -C dist "$(basename "$payload")"
       - name: Verify mounted DMG
         if: runner.os == 'macOS'
-        run: python scripts/verify_frozen.py --dmg dist/installers/*.dmg --require-runtime
+        run: python scripts/verify_frozen.py --dmg dist/installers/*.dmg --require-runtime --require-images
       - name: Verify installed Windows application
         if: runner.os == 'Windows'
         shell: pwsh
@@ -162,7 +201,7 @@ jobs:
             $entry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AndroidBox'
             if ($entry.UninstallString -ne "`"$install\Uninstall.exe`"") { throw 'Invalid registered uninstall command' }
             if ($entry.QuietUninstallString -ne "`"$install\Uninstall.exe`" /S") { throw 'Invalid registered silent uninstall command' }
-            python scripts/verify_frozen.py "$install/AndroidBox.exe" --require-runtime
+            python scripts/verify_frozen.py "$install/AndroidBox.exe" --require-runtime --require-images
             if ($LASTEXITCODE -ne 0) { throw 'Installed application verification failed' }
           } finally {
             $process = Start-Process -FilePath "$install/Uninstall.exe" -ArgumentList "/S _?=$install" -Wait -PassThru
@@ -177,7 +216,7 @@ jobs:
           "$GITHUB_WORKSPACE/dist/installers/AndroidBox-$version-Linux-${{ matrix.arch }}.AppImage" --appimage-extract
           test -x squashfs-root/AppRun
           test -x squashfs-root/usr/lib/androidbox/AndroidBox
-          python "$GITHUB_WORKSPACE/scripts/verify_frozen.py" "$RUNNER_TEMP/squashfs-root/AppRun" --require-runtime
+          python "$GITHUB_WORKSPACE/scripts/verify_frozen.py" "$RUNNER_TEMP/squashfs-root/AppRun" --require-runtime --require-images
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.os }}

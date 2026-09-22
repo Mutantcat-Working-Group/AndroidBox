@@ -126,7 +126,7 @@ write_files:
     permissions: "0755"
     owner: root:root
     content: |
-{_indent(firstboot_script(), 6)}
+{_indent(firstboot_script(version), 6)}
 
   - path: /etc/systemd/system/androidbox-firstboot.service
     permissions: "0644"
@@ -136,7 +136,7 @@ write_files:
       Description=AndroidBox first-boot guest provisioning
       After=network-online.target
       Wants=network-online.target
-      ConditionPathExists=!/var/lib/androidbox/.provisioned
+      ConditionPathExists=!/var/lib/androidbox/.provisioned-{version}
       StartLimitIntervalSec=0
 
       [Service]
@@ -153,8 +153,9 @@ runcmd:
 """
 
 
-def firstboot_script():
+def firstboot_script(version=None):
     """Return the one-shot in-guest provisioning script."""
+    version = version or __version__
     return f"""#!/bin/bash
 # Install the AndroidBox Android guest on first boot; runs once, then reboots.
 set -u
@@ -174,7 +175,10 @@ fail() {{
 }}
 
 state=/var/lib/androidbox
-if [[ -e $state/.provisioned ]]; then
+# The marker carries the seed version so upgrading guests re-provision instead
+# of pinning the broken (or simply older) result of an earlier first boot.
+marker="$state/.provisioned-{version}"
+if [[ -e $marker ]]; then
     exit 0
 fi
 mkdir -p "$state"
@@ -236,7 +240,7 @@ bash /opt/androidbox-src/{PAYLOAD_DIRECTORY}/guest/provision.sh --dedicated-gues
 # greetd takes over the virtual console from the automatic login shell.
 echo_progress "Android installed; rebooting into Android session..."
 systemctl disable --now getty@tty1.service || true
-touch "$state/.provisioned"
+touch "$marker"
 rm -f "$state/.provisioning"
 log "the guest is provisioned; rebooting into the Android session"
 systemctl reboot

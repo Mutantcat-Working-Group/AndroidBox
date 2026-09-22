@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "androidbox"
-version = "1.0.20260927"
+version = "1.0.20260928"
 description = "AndroidBox cross-platform QEMU desktop client"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
@@ -34,6 +34,7 @@ line_length = 131
 
 [tool.ruff]
 line-length = 131
+extend-exclude = ["guest/vendor"]
 
 [tool.ruff.lint]
 select = [

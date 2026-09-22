@@ -21,6 +21,33 @@ def binary(name):
     return None
 
 
+IMAGES_DISK = "androidbox-images.raw"
+
+
+def images_directory(arch):
+    """Return the bundled Android image directory for a guest architecture."""
+    root = runtime_root()
+    if root is None:
+        return None
+    path = root / "images" / arch
+    return path if path.is_dir() else None
+
+
+def images_disk(arch):
+    """Return the bundled read-only Android image disk for a guest architecture.
+
+    Release builds may ship the guest images per architecture; the block
+    device is attached read-only so first boot can install them without
+    reaching the OTA channels.
+    """
+    directory = images_directory(arch)
+    if directory is not None:
+        candidate = directory / IMAGES_DISK
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def qemu_data(executable):
     root = runtime_root()
     if root is not None and contains_binary(executable):
@@ -69,3 +96,17 @@ def verify_runtime():
             raise ValueError(f"Bundled {name} returned no version")
         result[name] = {"path": executable, "version": version}
     return result
+
+
+def verify_images():
+    """Describe the bundled guest image disk the client attaches at boot."""
+    from .runtime import normalize_arch
+
+    arch = normalize_arch(platform.machine())
+    disk = images_disk(arch)
+    if disk is None:
+        raise ValueError(f"Missing bundled Android image disk for {arch}")
+    size = Path(disk).stat().st_size
+    if size <= 0:
+        raise ValueError(f"Bundled Android image disk is empty: {disk}")
+    return {"path": disk, "arch": arch, "bytes": size}

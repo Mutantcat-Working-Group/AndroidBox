@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 
-def verify(executable, require_runtime=False):
+def verify(executable, require_runtime=False, require_images=False):
     executable = Path(executable).resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="androidbox-frozen-") as directory:
         root = Path(directory)
@@ -19,6 +19,8 @@ def verify(executable, require_runtime=False):
                    "--screenshot", str(root / "desktop.png")]
         if require_runtime:
             command.append("--require-runtime")
+        if require_images:
+            command.append("--require-images")
         subprocess.run(command,
                        cwd=root, env=environment, timeout=90, check=True)
         result = json.loads(report.read_text(encoding="utf-8"))
@@ -27,12 +29,14 @@ def verify(executable, require_runtime=False):
         if not (root / "desktop.png").is_file():
             raise ValueError("Frozen application did not render its window")
         if require_runtime and any(not result.get("runtime", {}).get(name, {}).get(field)
-                                   for name in ("qemu", "adb") for field in ("path", "version")):
+                                  for name in ("qemu", "adb") for field in ("path", "version")):
             raise ValueError("Frozen application did not verify its bundled runtime")
+        if require_images and not result.get("images", {}).get("path"):
+            raise ValueError("Frozen application did not bundle the Android image disk")
     print(f"Frozen Qt/noVNC self-test passed: {executable}")
 
 
-def verify_dmg(image, require_runtime=False):
+def verify_dmg(image, require_runtime=False, require_images=False):
     image = Path(image).resolve(strict=True)
     subprocess.run(["codesign", "--verify", "--verbose=2", str(image)], check=True)
     subprocess.run(["hdiutil", "verify", str(image)], check=True)
@@ -43,7 +47,8 @@ def verify_dmg(image, require_runtime=False):
         try:
             app = mount / "AndroidBox.app"
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
-            verify(app / "Contents/MacOS/AndroidBox", require_runtime=require_runtime)
+            verify(app / "Contents/MacOS/AndroidBox", require_runtime=require_runtime,
+                   require_images=require_images)
         finally:
             subprocess.run(["hdiutil", "detach", str(mount)], check=True, timeout=120)
 
@@ -52,7 +57,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("executable", type=Path)
     parser.add_argument("--require-runtime", action="store_true")
+    parser.add_argument("--require-images", action="store_true",
+                        help="Require the bundled Android image disk")
     parser.add_argument("--dmg", action="store_true", help="Mount and verify a macOS disk image")
     args = parser.parse_args()
     operation = verify_dmg if args.dmg else verify
-    operation(args.executable, require_runtime=args.require_runtime)
+    operation(args.executable, require_runtime=args.require_runtime, require_images=args.require_images)

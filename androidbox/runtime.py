@@ -280,6 +280,13 @@ def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_por
                                              "file": {"driver": "file",
                                                       "filename": str(seed_iso.resolve())}}),
                     "-device", "virtio-blk-pci,drive=cidata,bootindex=1"]
+    images_disk = bundled.images_disk(arch)
+    if images_disk:
+        command += ["-blockdev", json.dumps({"driver": "raw", "read-only": True,
+                                             "node-name": "androidbox-images",
+                                             "file": {"driver": "file",
+                                                      "filename": str(Path(images_disk).resolve())}}),
+                    "-device", "virtio-blk-pci,drive=androidbox-images,bootindex=2"]
     data = bundled.qemu_data(binary)
     if data:
         command += ["-L", str(data)]

@@ -1,0 +1,31 @@
+import sys, subprocess
+from setuptools import setup, Extension
+from Cython.Build import cythonize
+
+
+def pkgconfig(package, kw):
+    flag_map = {'-I': 'include_dirs', '-L': 'library_dirs', '-l': 'libraries'}
+    output = subprocess.getoutput(
+        'pkg-config --cflags --libs {}'.format(package))
+    for token in output.strip().split():
+        kw.setdefault(flag_map.get(token[:2]), []).append(token[2:])
+    return kw
+
+extension_kwargs = { 'sources': ["gbinder.pyx"] }
+extension_kwargs = pkgconfig('libgbinder', extension_kwargs)
+if None in extension_kwargs:
+    del extension_kwargs[None]
+extensions = [Extension('gbinder', **extension_kwargs)]
+extensions = cythonize(extensions, compiler_directives={
+                       'language_level': "3"})
+
+setup(
+    name="gbinder-python",
+    description="""Cython extension module for C++ gbinder functions""",
+    version="1.3.1",
+    author="Erfan Abdi",
+    author_email="erfangplus@gmail.com",
+    url="https://github.com/erfanoabdi/gbinder-python",
+    license="GPL3",
+    ext_modules=extensions
+)

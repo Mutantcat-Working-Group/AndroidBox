@@ -35,8 +35,15 @@ if not (root / "androidbox/web/novnc/core/rfb.js").is_file():
     raise SystemExit("Run python scripts/fetch_novnc.py before building the desktop application")
 
 runtime_binaries, runtime_data = [], []
+runtime_arch = {"arm64": "aarch64", "amd64": "x86_64"}.get(platform.machine().lower(), platform.machine().lower())
+images_data = []
+if os.environ.get("ANDROIDBOX_IMAGES_RAW"):
+    # The guest Android images ride beside the QEMU payload under a per-guest
+    # architecture directory, so first boot installs them without reaching the
+    # OTA channels. The disk is attached read-only by the running client.
+    images_raw = Path(os.environ["ANDROIDBOX_IMAGES_RAW"]).resolve(strict=True)
+    images_data = [(str(images_raw), f"runtime/images/{runtime_arch}/androidbox-images.raw")]
 if os.environ.get("ANDROIDBOX_QEMU_PREFIX"):
-    runtime_arch = {"arm64": "aarch64", "amd64": "x86_64"}.get(platform.machine().lower(), platform.machine().lower())
     runtime_binaries, runtime_data = collect_qemu(os.environ["ANDROIDBOX_QEMU_PREFIX"], runtime_arch)
 if os.environ.get("ANDROIDBOX_ADB_DIRECTORY"):
     adb_binaries, adb_data = collect_adb(os.environ["ANDROIDBOX_ADB_DIRECTORY"])
@@ -55,7 +62,8 @@ analysis = Analysis(
     datas=collect_data_files("androidbox") + collect_data_files("certifi")
     + [(str(root / entry), entry) for entry in
        ("Makefile", "androidbox.py", "guest", "data", "tools", "dbus", "systemd")]
-    + [(str(root / "LICENSE"), "licenses/androidbox")] + runtime_data,
+   + [(str(root / "LICENSE"), "licenses/androidbox")] + runtime_data,
+    + images_data,
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],

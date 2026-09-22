@@ -14,15 +14,104 @@ fi
 source_dir=$(cd -- "$(dirname -- "$0")/.." && pwd)
 
 apt-get update
-apt-get install -y make lxc python3 python3-dbus python3-gi python3-gbinder \
+apt-get install -y make lxc python3 python3-dbus python3-gi python3-setuptools \
     gir1.2-gtk-3.0 polkitd dbus-user-session pulseaudio iptables dnsmasq-base \
     cage greetd socat curl ca-certificates apparmor apparmor-utils
+
+# Ubuntu noble has no gbinder packages, so build the binder stack from the
+# vendored sources. Best-effort on purpose: if the build fails the guest still
+# boots, but binder integration (clipboard, notifications, hardware, immersive
+# mode) degrades and the androidbox CLI cannot import its bindings.
+build_gbinder_stack() {
+    apt-get install -y build-essential pkg-config libglib2.0-dev python3-dev cython3
+    local multiarch py_version dist_packages
+    multiarch=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+    make -C "$source_dir/guest/vendor/libglibutil" release
+    make -C "$source_dir/guest/vendor/libglibutil" pkgconfig
+    make -C "$source_dir/guest/vendor/libglibutil" install-dev "LIBDIR=usr/lib/$multiarch"
+    make -C "$source_dir/guest/vendor/libgbinder" release
+    make -C "$source_dir/guest/vendor/libgbinder" pkgconfig
+    make -C "$source_dir/guest/vendor/libgbinder" install-dev "LIBDIR=usr/lib/$multiarch"
+    ldconfig
+    (cd "$source_dir/guest/vendor/python-gbinder" && \
+        python3 setup.py build_ext --inplace)
+    py_version=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+    dist_packages=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')
+    install -d "$dist_packages" "/usr/local/lib/python${py_version}/dist-packages"
+    install -m 0644 "$source_dir"/guest/vendor/python-gbinder/gbinder*.so "$dist_packages"
+    install -m 0644 "$source_dir"/guest/vendor/python-gbinder/gbinder*.so \
+        "/usr/local/lib/python${py_version}/dist-packages"
+    python3 -c 'import gbinder'
+}
+if ! build_gbinder_stack; then
+    echo "WARNING: gbinder bindings unavailable; Android integration degraded." >&2
+fi
 
 if ! modprobe binder_linux devices=binder,hwbinder,vndbinder; then
     echo "Install a guest kernel with CONFIG_ANDROID_BINDER_IPC and CONFIG_ANDROID_BINDERFS, then reboot." >&2
     exit 1
 fi
 install -m 0644 "$source_dir/guest/binder.conf" /etc/modules-load.d/androidbox.conf
+# binderfs only creates the node names handed to the module, and the Android
+# container expects /dev/binder exactly. Without the persistent options every
+# reboot reloads binder_linux with its default names (anbox-binder and friends),
+# and the container starts against a /dev/binder that no longer exists.
+cat > /etc/modprobe.d/androidbox.conf <<'EOF'
+options binder_linux devices=binder,hwbinder,vndbinder
+EOF
+
+# Release builds carry the Android archives on a read-only block device, so a
+# fresh install never depends on the guest network reaching the OTA channels.
+# Anything that cannot be unpacked here falls back to the channel downloads
+# performed by `androidbox init` below.
+preinstalled_images=/usr/share/androidbox-extra/images
+install_preinstalled_images() {
+    local label="androidbox-img"
+    local mount_point="/run/androidbox-images"
+    local device attempt
+    if [[ -f $preinstalled_images/system.img && -f $preinstalled_images/vendor.img ]]; then
+        return 0
+    fi
+    apt-get install -y unzip
+    mkdir -p "$mount_point"
+    device=""
+    for attempt in $(seq 1 30); do
+        device=$(blkid -L "$label" 2>/dev/null || true)
+        [[ -n $device ]] && break
+        sleep 1
+    done
+    if [[ -z $device ]]; then
+        echo "No bundled Android image disk found; the OTA channels will be used." >&2
+        return 0
+    fi
+    if ! mount -o ro "$device" "$mount_point"; then
+        echo "WARNING: could not mount the bundled Android image disk ${device}" >&2
+        return 0
+    fi
+    if [[ -f $mount_point/system.zip && -f $mount_point/vendor.zip && -f $mount_point/SHA256SUMS ]] && \
+        (cd "$mount_point" && sha256sum --status -c SHA256SUMS); then
+        install -d "$preinstalled_images"
+        unzip -o -q "$mount_point/system.zip" -d "$preinstalled_images"
+        unzip -o -q "$mount_point/vendor.zip" -d "$preinstalled_images"
+    else
+        echo "WARNING: bundled Android archives failed verification; the OTA channels will be used." >&2
+    fi
+    umount "$mount_point"
+    # Disks provisioned before the images were bundled kept them under the
+    # default work path; move them beside the preinstalled images so a
+    # version-triggered re-provision needs no channel access at all.
+    if [[ ! -f $preinstalled_images/system.img ]] && \
+        [[ -f /var/lib/androidbox/images/system.img && -f /var/lib/androidbox/images/vendor.img ]]; then
+        install -d "$preinstalled_images"
+        install -m 0644 /var/lib/androidbox/images/system.img "$preinstalled_images/system.img"
+        install -m 0644 /var/lib/androidbox/images/vendor.img "$preinstalled_images/vendor.img"
+        rm -f /var/lib/androidbox/images/system.img /var/lib/androidbox/images/vendor.img
+    fi
+    [[ -f $preinstalled_images/system.img && -f $preinstalled_images/vendor.img ]]
+}
+install_preinstalled_images || \
+    echo "WARNING: no bundled Android image could be installed; falling back to the OTA channels." >&2
+
 make -C "$source_dir" install install_apparmor
 id androidbox >/dev/null 2>&1 || useradd --create-home --shell /bin/bash androidbox
 usermod -a -G video,render androidbox

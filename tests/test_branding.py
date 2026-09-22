@@ -78,6 +78,30 @@ class BrandingTests(unittest.TestCase):
         provision = (ROOT / "guest/provision.sh").read_text()
         self.assertIn('make -C "$source_dir" install install_apparmor', provision)
 
+    def test_guest_builds_gbinder_from_vendored_sources(self):
+        provision = (ROOT / "guest/provision.sh").read_text()
+        # noble has no gbinder packages; the stack comes from guest/vendor.
+        self.assertNotIn("python3-gbinder", provision)
+        self.assertIn("guest/vendor/libglibutil", provision)
+        self.assertIn("guest/vendor/libgbinder", provision)
+        self.assertIn("guest/vendor/python-gbinder", provision)
+        self.assertIn("python3 -c 'import gbinder'", provision)
+
+    def test_guest_persists_binder_device_names(self):
+        provision = (ROOT / "guest/provision.sh").read_text()
+        # The container needs /dev/binder, but binderfs only creates the names
+        # the module was given. Persisting the options keeps every reboot with
+        # the same node names instead of the upstream defaults.
+        self.assertIn("/etc/modprobe.d/androidbox.conf", provision)
+        self.assertIn("options binder_linux devices=binder,hwbinder,vndbinder", provision)
+
+    def test_guest_installs_preinstalled_android_images(self):
+        provision = (ROOT / "guest/provision.sh").read_text()
+        self.assertIn('label="androidbox-img"', provision)
+        self.assertIn('blkid -L "$label"', provision)
+        self.assertIn("/usr/share/androidbox-extra/images", provision)
+        self.assertIn("install_preinstalled_images", provision)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -13,7 +13,7 @@ from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtWidgets import QApplication
 
 from androidbox.desktop import MainWindow, SettingsDialog
-from androidbox.bundled import verify_runtime
+from androidbox.bundled import verify_images, verify_runtime
 from androidbox.display import DisplayServer
 from androidbox.runtime import VMConfig, load_config, reserve_ports
 
@@ -24,6 +24,7 @@ def main(argv=None):
     parser.add_argument("--report", type=Path)
     parser.add_argument("--timeout", type=int, default=15)
     parser.add_argument("--require-runtime", action="store_true")
+    parser.add_argument("--require-images", action="store_true")
     args = parser.parse_args(argv)
     if args.report:
         args.report.unlink(missing_ok=True)
@@ -37,6 +38,7 @@ def main(argv=None):
         finished = False
         diagnostics = {"loads": [], "status": None}
         runtime = {}
+        images = {}
         started = time.monotonic()
         window.view.loadFinished.connect(lambda success: diagnostics["loads"].append(success))
 
@@ -68,6 +70,8 @@ def main(argv=None):
             try:
                 if args.require_runtime:
                     runtime.update(verify_runtime())
+                if args.require_images:
+                    images.update(verify_images())
                 assert window.windowTitle() == "AndroidBox"
                 assert window.start_action.isEnabled()
                 assert not window.stop_action.isEnabled()
@@ -114,8 +118,8 @@ def main(argv=None):
         if not finished:
             failures.append("Application exited before completing self-test")
         result = {"passed": not failures, "errors": failures, "frozen": bool(getattr(sys, "frozen", False)),
-                  "diagnostics": diagnostics, "runtime": runtime,
-                  "elapsed_seconds": round(time.monotonic() - started, 2)}
+                  "diagnostics": diagnostics, "runtime": runtime, "images": images,
+                 "elapsed_seconds": round(time.monotonic() - started, 2)}
         if args.report:
             args.report.write_text(json.dumps(result) + "\n", encoding="utf-8")
         if sys.stdout is not None:
