@@ -101,7 +101,9 @@ if sys.platform == "darwin":
         bundle_identifier="org.mutantcat.androidbox",
         version=version,
         info_plist={"NSHighResolutionCapable": True,
-                    "CFBundleShortVersionString": version,
+                   "NSCameraUsageDescription": "AndroidBox forwards the webcam to the Android camera app running inside the guest.",
+                   "NSMicrophoneUsageDescription": "AndroidBox forwards the microphone to the Android system running inside the guest.",
+                   "CFBundleShortVersionString": version,
                     "CFBundleVersion": ".".join(str(int(part)) for part in
                                                (version[-8:-4], version[-4:-2], version[-2:]))},
     )

@@ -97,6 +97,9 @@ CAMERA_GUEST_PORT = 7100
 AUDIO_DRIVERS = {"Darwin": ("coreaudio",), "Windows": ("dsound", "sdl", "pa"),
                  "Linux": ("pa", "pipewire", "sdl", "alsa")}
 AUDIO_DEVICE_ID = "androidbox-audio"
+# QEMU prints this when a codec device cannot take a capture voice, for
+# instance when the host withholds the microphone from the application.
+AUDIO_CAPTURE_DENIED = "Can not open `adc'"
 
 
 def select_cpu(accelerator, cpu_mode):
@@ -433,6 +436,7 @@ class VirtualMachine:
         self.camera_port = None
         self.audio_driver = None
         self.audio_settings = None
+        self.microphone_denied = False
 
     @property
     def running(self):
@@ -460,6 +464,8 @@ class VirtualMachine:
             if self.survives_startup():
                 self.audio_settings = settings
                 self.audio_driver = driver
+                self.microphone_denied = (settings.microphone != "off"
+                                          and self.log_mentions(AUDIO_CAPTURE_DENIED))
                 return
             code = self.process.returncode if self.process is not None else None
             self.terminate()
@@ -483,9 +489,23 @@ class VirtualMachine:
         devices = []
         if settings.audio != "off":
             devices.append("speakers")
-        if settings.microphone != "off":
+        if settings.microphone != "off" and not self.microphone_denied:
             devices.append("microphone")
-        return f"{self.audio_driver}: " + (" and ".join(devices) if devices else "no device attached")
+        line = f"{self.audio_driver}: " + (" and ".join(devices) if devices else "no device attached")
+        if self.microphone_denied:
+            line += "; the host withholds its microphone, so Android cannot hear it"
+        return line
+
+    def log_mentions(self, marker):
+        """True when QEMU already wrote marker into the runtime log."""
+        path = getattr(self.log, "name", None)
+        if path is None:
+            return False
+        try:
+            self.log.flush()
+            return marker.encode("ascii") in Path(path).read_bytes()
+        except OSError:
+            return False
 
     def connect_display(self):
         qmp_execute(self.qmp_port, "set_password", {"protocol": "vnc", "password": self.password})

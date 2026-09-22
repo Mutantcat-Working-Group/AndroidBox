@@ -7,11 +7,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from androidbox import camera
-from androidbox.runtime import (CAMERA_GUEST_PORT, VMConfig, audio_arguments, audio_driver,
-                                build_command, start_attempts)
+from androidbox.runtime import (AUDIO_CAPTURE_DENIED, CAMERA_GUEST_PORT, VMConfig,
+                                VirtualMachine, audio_arguments, audio_driver, build_command,
+                                start_attempts)
 
 QT_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
@@ -167,6 +168,53 @@ class CameraStreamTests(unittest.TestCase):
                 streamer.stop()
             finally:
                 importlib.reload(camera)
+
+    def test_frames_flow_through_a_capture_session(self):
+        # QCamera carries no video sink of its own, so the frames have to
+        # travel through the capture session that owns both camera and sink.
+        streamer = camera.CameraStreamer(7101)
+        device = type("Device", (), {"isNull": staticmethod(lambda: False),
+                                     "description": staticmethod(lambda: "Test Camera")})()
+        with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
+                patch.object(camera, "QCamera", MagicMock()), \
+                patch.object(camera, "QMediaCaptureSession", MagicMock()), \
+                patch.object(camera, "QVideoSink", MagicMock()):
+            self.assertTrue(streamer.start())
+            self.assertTrue(streamer.running)
+            session = camera.QMediaCaptureSession.return_value
+            session.setCamera.assert_called_once_with(camera.QCamera.return_value)
+            self.assertIs(session.setVideoSink.call_args.args[0], camera.QVideoSink.return_value)
+            camera.QCamera.return_value.start.assert_called_once()
+            streamer.stop()
+            camera.QCamera.return_value.stop.assert_called_once()
+        self.assertIsNone(streamer.capture)
+        self.assertFalse(streamer.running)
+
+
+class GuestAudioReportTests(unittest.TestCase):
+    def test_the_log_reveals_a_microphone_the_host_refused(self):
+        vm = VirtualMachine()
+        self.assertFalse(vm.log_mentions(AUDIO_CAPTURE_DENIED))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "qemu.log"
+            with path.open("wb") as stream:
+                stream.write(b"qemu-system-x86_64: -device hda-micro,audiodev=androidbox-audio"
+                             b": audio: Can not open `adc' (no host audio driver)\n")
+                vm.log = stream
+                self.assertTrue(vm.log_mentions(AUDIO_CAPTURE_DENIED))
+                self.assertFalse(vm.log_mentions("a different problem"))
+
+    def test_guest_sound_names_the_devices_it_kept(self):
+        vm = VirtualMachine()
+        vm.audio_driver = "coreaudio"
+        vm.audio_settings = VMConfig(audio="auto", microphone="auto")
+        self.assertEqual(vm.describe_audio(), "coreaudio: speakers and microphone")
+        vm.microphone_denied = True
+        report = vm.describe_audio()
+        self.assertIn("speakers", report)
+        self.assertIn("withholds its microphone", report)
+        vm.audio_driver = ""
+        self.assertEqual(vm.describe_audio(), "guest audio off")
 
 
 @unittest.skipUnless(QT_AVAILABLE, "Install PySide6 to test the desktop shell")

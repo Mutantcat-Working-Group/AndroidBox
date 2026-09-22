@@ -15,7 +15,7 @@ try:
     from PySide6.QtCore import QBuffer, QIODevice, QObject, Qt, QTimer, Signal
     from PySide6.QtGui import QImage
     from PySide6.QtNetwork import QAbstractSocket, QTcpSocket
-    from PySide6.QtMultimedia import QCamera, QMediaDevices, QVideoSink
+    from PySide6.QtMultimedia import QCamera, QMediaCaptureSession, QMediaDevices, QVideoSink
 
     CAMERA_STACK = True
 except ImportError:  # pragma: no cover - QtMultimedia is optional
@@ -64,6 +64,7 @@ if CAMERA_STACK:
             self.port = int(port)
             self.device = ""
             self.camera = None
+            self.capture = None
             self.sink = None
             self.sent = 0
             self._previous_frame = 0.0
@@ -86,10 +87,14 @@ if CAMERA_STACK:
             self.device = device.description()
             self.sink = QVideoSink(self)
             self.sink.videoFrameChanged.connect(self.send_frame)
+            # QCamera has no video sink of its own, so the frames flow through
+            # a capture session that owns both the camera and the sink.
             self.camera = QCamera(device, self)
+            self.capture = QMediaCaptureSession(self)
+            self.capture.setCamera(self.camera)
+            self.capture.setVideoSink(self.sink)
             self.camera.errorOccurred.connect(self._camera_error)
-            self.camera.setVideoSink(self.sink)
-            self.socket.connectToHost(QAbstractSocket.LocalHost, self.port)
+            self.socket.connectToHost("127.0.0.1", self.port)
             self.camera.start()
             self.status.emit(f"Camera streaming into the guest: {self.device}")
             return True
@@ -100,6 +105,9 @@ if CAMERA_STACK:
                 self.camera.stop()
                 self.camera.deleteLater()
                 self.camera = None
+            if self.capture is not None:
+                self.capture.deleteLater()
+                self.capture = None
             self.sink = None
             self.socket.abort()
             self.status.emit("Camera stopped")
@@ -128,7 +136,7 @@ if CAMERA_STACK:
 
         def _connect(self):
             if self.camera is not None:
-                self.socket.connectToHost(QAbstractSocket.LocalHost, self.port)
+                self.socket.connectToHost("127.0.0.1", self.port)
 
         def _camera_error(self, error, message):
             if self.camera is not None:

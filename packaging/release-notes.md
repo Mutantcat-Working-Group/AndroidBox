@@ -19,7 +19,9 @@ and 640 pixels on the longest edge. Hosts without a webcam, or with the webcam
 already in use, fall back to a still test pattern, so the camera app still opens
 instead of failing. The bridge service is only enabled when a loopback camera
 device exists; otherwise the guest keeps the vivid test pattern device as its
-camera.
+camera. On macOS the first camera or microphone use asks for system permission,
+so Android audio and a live preview need AndroidBox to be allowed under
+Privacy & Security.
 
 ## AndroidBox 1.0.20260929
 
