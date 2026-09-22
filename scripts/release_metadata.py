@@ -56,9 +56,9 @@ def artifact_names(version):
     return names
 
 
-def collect_checksums(directory, version):
+def collect_checksums(directory, version, algorithm):
     expected = set(artifact_names(version))
-    actual = {path.name for path in directory.iterdir() if path.name != "SHA256SUMS"}
+    actual = {path.name for path in directory.iterdir() if path.name != "SHA256SUMS" and not path.name.startswith("checksums-")}
     if actual != expected:
         raise ValueError(f"Incorrect release payload: missing={expected - actual}, unexpected={actual - expected}")
     lines = []
@@ -67,7 +67,7 @@ def collect_checksums(directory, version):
         if not path.is_file() or path.is_symlink() or not 0 < path.stat().st_size < 2 * 1024**3:
             raise ValueError(f"Invalid or oversized GitHub release artifact: {name}")
         with path.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            digest = hashlib.file_digest(stream, algorithm).hexdigest()
         lines.append(f"{digest}  {name}\n")
     return "".join(lines)
 
@@ -79,7 +79,9 @@ def main():
     args = parser.parse_args()
     version = validate_versions(Path(__file__).resolve().parents[1], args.tag)
     if args.checksums:
-        (args.checksums / "SHA256SUMS").write_text(collect_checksums(args.checksums, version), encoding="utf-8")
+        (args.checksums / "SHA256SUMS").write_text(collect_checksums(args.checksums, version, "sha256"), encoding="utf-8")
+        (args.checksums / "checksums-md5.txt").write_text(collect_checksums(args.checksums, version, "md5"), encoding="utf-8")
+        (args.checksums / "checksums-sha1.txt").write_text(collect_checksums(args.checksums, version, "sha1"), encoding="utf-8")
     print(version)
 
 
