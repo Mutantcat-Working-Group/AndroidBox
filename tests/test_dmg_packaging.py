@@ -94,6 +94,50 @@ class DmgPackagingTests(unittest.TestCase):
             self.assertEqual(ditto, [("ditto", app, stage / "AndroidBox.app")])
             self.assertEqual(create.call_args.args[1], image)
 
+    def test_verify_dmg_image_succeeds_without_retrying(self):
+        with patch.object(package_desktop, "run") as spawn, \
+                patch.object(package_desktop, "release_volume") as release, \
+                patch.object(package_desktop, "time") as clock:
+            package_desktop.verify_dmg_image(Path("/target.dmg"))
+        self.assertEqual([call.args[0] for call in spawn.call_args_list], ["hdiutil"])
+        self.assertFalse(release.called)
+        self.assertFalse(clock.sleep.called)
+
+    def test_verify_dmg_image_retries_once_when_the_helper_is_busy(self):
+        refusal = subprocess.CalledProcessError(1, "hdiutil")
+        with patch.object(package_desktop, "run", side_effect=[refusal, None]) as spawn, \
+                patch.object(package_desktop, "release_volume") as release, \
+                patch.object(package_desktop, "time") as clock:
+            package_desktop.verify_dmg_image(Path("/target.dmg"))
+        self.assertEqual([call.args[0] for call in spawn.call_args_list], ["hdiutil", "hdiutil"])
+        self.assertEqual(release.call_count, 1)
+        clock.sleep.assert_called_once_with(5)
+
+    def test_verify_dmg_image_reports_a_failure_that_persists(self):
+        refusal = subprocess.CalledProcessError(1, "hdiutil")
+        with patch.object(package_desktop, "run", side_effect=[refusal, refusal]) as spawn, \
+                patch.object(package_desktop, "release_volume"), \
+                patch.object(package_desktop, "time"):
+            with self.assertRaises(subprocess.CalledProcessError):
+                package_desktop.verify_dmg_image(Path("/target.dmg"))
+        self.assertEqual(spawn.call_count, 2)
+
+    def test_package_mac_verifies_the_image_through_the_retrying_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "dist/AndroidBox.app"
+            (app / "Contents").mkdir(parents=True)
+            output = root / "dist/installers"
+            output.mkdir()
+            image = output / "AndroidBox-1.0.20260921-macOS-arm64.dmg"
+            with patch.object(package_desktop, "ROOT", root), \
+                    patch.object(package_desktop, "sign_app"), \
+                    patch.object(package_desktop, "run"), \
+                    patch.object(package_desktop, "create_dmg", return_value=image), \
+                    patch.object(package_desktop, "verify_dmg_image") as verify:
+                package_desktop.package_mac("1.0.20260921", "arm64", output)
+            verify.assert_called_once_with(image)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,6 +59,22 @@ def create_dmg(source, target, name=VOLUME_NAME):
     run(*command)
 
 
+def verify_dmg_image(target, pause=5):
+    """Open the finished image once, retrying when the disk image helper is busy.
+
+    A signed image can be refused right after it is written with "Resource
+    temporarily unavailable" while the runner's helper finishes an earlier
+    volume; the image itself is fine, so one unhurried second attempt is
+    cheaper than failing a release over a busy helper.
+    """
+    try:
+        run("hdiutil", "verify", target)
+    except subprocess.CalledProcessError:
+        time.sleep(pause)
+        release_volume()
+        run("hdiutil", "verify", target)
+
+
 def package_mac(version, arch, output):
     arch = "arm64" if arch in ("aarch64", "arm64") else "x86_64"
     app = ROOT / "dist/AndroidBox.app"
@@ -73,7 +89,7 @@ def package_mac(version, arch, output):
         create_dmg(stage, target)
     run("codesign", "--force", "--sign", "-", target)
     run("codesign", "--verify", "--verbose=2", target)
-    run("hdiutil", "verify", target)
+    verify_dmg_image(target)
     return target
 
 
