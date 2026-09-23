@@ -13,7 +13,8 @@ import sys
 
 
 try:
-    from PySide6.QtCore import QBuffer, QIODevice, QObject, Qt, QTimer, Signal
+    from PySide6.QtCore import (QBuffer, QCameraPermission, QCoreApplication, QIODevice,
+                                QObject, Qt, QTimer, Signal)
     from PySide6.QtGui import QImage
     from PySide6.QtNetwork import QAbstractSocket, QTcpSocket
     from PySide6.QtMultimedia import QCamera, QMediaCaptureSession, QMediaDevices, QVideoSink
@@ -28,6 +29,13 @@ except ImportError:  # pragma: no cover - QtMultimedia is optional
 FRAME_INTERVAL = 1.0 / 15
 MAX_FRAME_WIDTH = 640
 JPEG_QUALITY = 70
+MAX_CAMERA_RECONNECTS = 5
+CAMERA_RECONNECT_DELAY_MS = 1500
+CAMERA_STABLE_CONNECTION_SECONDS = 10.0
+CAMERA_PERMISSION_DENIED = (
+    "Camera permission denied. Allow AndroidBox in System Settings > "
+    "Privacy & Security > Camera, then restart AndroidBox."
+)
 
 
 def encode_frame(image, quality=JPEG_QUALITY, max_width=MAX_FRAME_WIDTH):
@@ -69,23 +77,37 @@ if CAMERA_STACK:
             self.sink = None
             self.sent = 0
             self._previous_frame = 0.0
+            self._reconnect_attempts = 0
+            self._connected_at = 0.0
+            self._pending_device = None
             self.socket = QTcpSocket(self)
             self.socket.connected.connect(self._connected)
             self.socket.disconnected.connect(self._disconnected)
 
         @property
         def running(self):
-            return self.camera is not None
+            return self.camera is not None or self._pending_device is not None
 
         def start(self):
             """Attach to the host webcam; False when this host has none."""
-            if self.camera is not None:
+            if self.camera is not None or self._pending_device is not None:
                 return True
             device = QMediaDevices.defaultVideoInput()
             if device.isNull():
                 self.status.emit("Camera is off: this host reports no video input device")
                 return False
             self.device = device.description()
+            permission = self._request_camera_permission(device)
+            if permission is False:
+                return False
+            if permission is None:
+                return True
+            self._start_capture(device)
+            return True
+
+        def _start_capture(self, device):
+            if self.camera is not None:
+                return
             self.sink = QVideoSink(self)
             self.sink.videoFrameChanged.connect(self.send_frame)
             # QCamera has no video sink of its own, so the frames flow through
@@ -95,13 +117,54 @@ if CAMERA_STACK:
             self.capture.setCamera(self.camera)
             self.capture.setVideoSink(self.sink)
             self.camera.errorOccurred.connect(self._camera_error)
+            self._reconnect_attempts = 0
+            self._connected_at = 0.0
             self.socket.connectToHost("127.0.0.1", self.port)
             self.camera.start()
             self.status.emit(f"Starting host camera: {self.device}")
-            return True
+
+        def _request_camera_permission(self, device):
+            """Return True when capture may start, False when denied, None while asking."""
+            if sys.platform != "darwin":
+                return True
+            application = QCoreApplication.instance()
+            if application is None:
+                return True
+            permission = QCameraPermission()
+            status = application.checkPermission(permission)
+            if status == Qt.PermissionStatus.Granted:
+                return True
+            if status == Qt.PermissionStatus.Denied:
+                self.status.emit(CAMERA_PERMISSION_DENIED)
+                return False
+            self._pending_device = device
+            self.status.emit("Waiting for macOS camera permission")
+            application.requestPermission(permission, self, self._camera_permission_result)
+            return None
+
+        def _camera_permission_result(self, permission):
+            device, self._pending_device = self._pending_device, None
+            if device is None:
+                return
+            application = QCoreApplication.instance()
+            status = (application.checkPermission(permission) if application is not None
+                      else Qt.PermissionStatus.Denied)
+            if status == Qt.PermissionStatus.Granted:
+                self._start_capture(device)
+            elif status == Qt.PermissionStatus.Denied:
+                self.status.emit(CAMERA_PERMISSION_DENIED)
+            else:
+                self.status.emit("Camera permission was not granted; camera preview is unavailable")
 
         def stop(self):
             """Release the webcam and the connection to the guest."""
+            self._release_camera()
+            self._reconnect_attempts = 0
+            self._connected_at = 0.0
+            self.status.emit("Camera stopped")
+
+        def _release_camera(self):
+            self._pending_device = None
             if self.camera is not None:
                 self.camera.stop()
                 self.camera.deleteLater()
@@ -111,7 +174,6 @@ if CAMERA_STACK:
                 self.capture = None
             self.sink = None
             self.socket.abort()
-            self.status.emit("Camera stopped")
 
         def send_frame(self, video_frame):
             """Encode one frame and push it to the guest, at a modest rate."""
@@ -124,38 +186,45 @@ if CAMERA_STACK:
             payload = encode_frame(video_frame.toImage())
             if payload:
                 self.socket.write(payload)
+                if self.sent == 0:
+                    self.status.emit(f"Camera streaming into the guest: {self.device}")
                 self.sent += 1
 
         def _connected(self):
+            self._connected_at = time.monotonic()
             self.status.emit(f"Camera connected to the guest: {self.device}")
 
         def _disconnected(self):
             if self.camera is None:
                 return
-            self.status.emit("The guest camera bridge closed; reconnecting")
-            QTimer.singleShot(1500, self._connect)
+            if (self._connected_at
+                    and time.monotonic() - self._connected_at >= CAMERA_STABLE_CONNECTION_SECONDS):
+                self._reconnect_attempts = 0
+            self._reconnect_attempts += 1
+            if self._reconnect_attempts > MAX_CAMERA_RECONNECTS:
+                self.status.emit(
+                    "Camera bridge stopped responding after "
+                    f"{MAX_CAMERA_RECONNECTS} reconnects; camera preview is unavailable"
+                )
+                self._release_camera()
+                return
+            self.status.emit(
+                "The guest camera bridge closed; reconnecting "
+                f"({self._reconnect_attempts} of {MAX_CAMERA_RECONNECTS})"
+            )
+            QTimer.singleShot(CAMERA_RECONNECT_DELAY_MS, self._connect)
 
         def _connect(self):
-            if self.camera is not None:
+            if self.camera is not None and self._pending_device is None:
                 self.socket.connectToHost("127.0.0.1", self.port)
 
         def _camera_error(self, error, message):
             if self.camera is None:
                 return
             text = str(message).strip() or "Unknown camera error"
-            camera, self.camera = self.camera, None
-            capture, self.capture = self.capture, None
-            self.sink = None
-            camera.stop()
-            camera.deleteLater()
-            if capture is not None:
-                capture.deleteLater()
-            self.socket.abort()
+            self._release_camera()
             if sys.platform == "darwin" and "not granted" in text.lower():
-                self.status.emit(
-                    "Camera permission denied. Allow AndroidBox in System Settings > "
-                    "Privacy & Security > Camera, then restart AndroidBox."
-                )
+                self.status.emit(CAMERA_PERMISSION_DENIED)
             else:
                 self.status.emit(f"Camera error: {text}")
 

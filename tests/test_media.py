@@ -176,18 +176,20 @@ class CameraStreamTests(unittest.TestCase):
         streamer = camera.CameraStreamer(7101)
         device = type("Device", (), {"isNull": staticmethod(lambda: False),
                                      "description": staticmethod(lambda: "Test Camera")})()
+        mock_camera = MagicMock()
         with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
-                patch.object(camera, "QCamera", MagicMock()), \
+                patch.object(camera, "QCamera", mock_camera), \
                 patch.object(camera, "QMediaCaptureSession", MagicMock()), \
-                patch.object(camera, "QVideoSink", MagicMock()):
+                patch.object(camera, "QVideoSink", MagicMock()), \
+                patch.object(streamer, "_request_camera_permission", return_value=True):
             self.assertTrue(streamer.start())
             self.assertTrue(streamer.running)
             session = camera.QMediaCaptureSession.return_value
-            session.setCamera.assert_called_once_with(camera.QCamera.return_value)
+            session.setCamera.assert_called_once_with(mock_camera.return_value)
             self.assertIs(session.setVideoSink.call_args.args[0], camera.QVideoSink.return_value)
-            camera.QCamera.return_value.start.assert_called_once()
+            mock_camera.return_value.start.assert_called_once()
             streamer.stop()
-            camera.QCamera.return_value.stop.assert_called_once()
+            mock_camera.return_value.stop.assert_called_once()
         self.assertIsNone(streamer.capture)
         self.assertFalse(streamer.running)
 
@@ -208,6 +210,78 @@ class CameraStreamTests(unittest.TestCase):
         capture.deleteLater.assert_called_once()
         self.assertIn("System Settings", reports[-1])
         self.assertIn("Privacy & Security > Camera", reports[-1])
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_camera_reconnect_budget_is_bounded(self):
+        streamer = camera.CameraStreamer(7101)
+        streamer.camera = MagicMock()
+        streamer.device = "Test Camera"
+        streamer._connected()
+        reports = []
+        streamer.status.connect(reports.append)
+        reconnects = []
+        with patch.object(camera.QTimer, "singleShot",
+                          side_effect=lambda delay, callback: reconnects.append((delay, callback))):
+            for _ in range(camera.MAX_CAMERA_RECONNECTS):
+                streamer._disconnected()
+            self.assertEqual(len(reconnects), camera.MAX_CAMERA_RECONNECTS)
+            streamer._disconnected()
+        self.assertEqual(len(reconnects), camera.MAX_CAMERA_RECONNECTS)
+        self.assertFalse(streamer.running)
+        self.assertIn("stopped responding", reports[-1])
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_camera_reconnect_budget_resets_after_a_stable_connection(self):
+        streamer = camera.CameraStreamer(7101)
+        streamer.camera = MagicMock()
+        streamer._reconnect_attempts = camera.MAX_CAMERA_RECONNECTS
+        streamer._connected_at = camera.time.monotonic() - camera.CAMERA_STABLE_CONNECTION_SECONDS - 1
+        with patch.object(camera.QTimer, "singleShot"):
+            streamer._disconnected()
+        self.assertEqual(streamer._reconnect_attempts, 1)
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_macos_permission_denied_reports_without_starting_camera(self):
+        streamer = camera.CameraStreamer(7101)
+        reports = []
+        streamer.status.connect(reports.append)
+        device = type("Device", (), {"isNull": staticmethod(lambda: False),
+                                     "description": staticmethod(lambda: "Test Camera")})()
+        application = MagicMock()
+        application.checkPermission.return_value = camera.Qt.PermissionStatus.Denied
+        mock_camera = MagicMock()
+        with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
+                patch.object(camera.QCoreApplication, "instance", return_value=application), \
+                patch.object(camera, "QCamera", mock_camera), \
+                patch("sys.platform", "darwin"):
+            self.assertFalse(streamer.start())
+        self.assertFalse(streamer.running)
+        self.assertIn("System Settings", reports[-1])
+        mock_camera.assert_not_called()
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_macos_permission_request_starts_camera_when_granted(self):
+        streamer = camera.CameraStreamer(7101)
+        device = type("Device", (), {"isNull": staticmethod(lambda: False),
+                                     "description": staticmethod(lambda: "Test Camera")})()
+        application = MagicMock()
+        application.checkPermission.side_effect = [
+            camera.Qt.PermissionStatus.Undetermined,
+            camera.Qt.PermissionStatus.Granted,
+        ]
+        application.requestPermission.side_effect = (
+            lambda permission, context, callback: callback(permission))
+        mock_camera = MagicMock()
+        with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
+                patch.object(camera.QCoreApplication, "instance", return_value=application), \
+                patch.object(camera, "QCamera", mock_camera), \
+                patch.object(camera, "QMediaCaptureSession", MagicMock()), \
+                patch.object(camera, "QVideoSink", MagicMock()), \
+                patch("sys.platform", "darwin"):
+            self.assertTrue(streamer.start())
+        self.assertTrue(streamer.running)
+        mock_camera.return_value.start.assert_called_once()
+        application.requestPermission.assert_called_once()
 
 
 class GuestAudioReportTests(unittest.TestCase):
