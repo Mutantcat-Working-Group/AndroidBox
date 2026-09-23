@@ -1,3 +1,13 @@
+androidbox (1.0.20261002) unstable; urgency=medium
+
+  * Validate Android networking through a local captive-portal probe: the guest
+    serves a 204 answer and points Android's connectivity checks at it, so the
+    Ethernet link is fully validated instead of staying at partial
+    connectivity on networks where the default endpoints are unreachable, and
+    so apps stop reporting no internet. The helper sets the Android PATH
+    environment under systemd, without which lxc-attach fails and none of the
+    settings are applied.
+
 androidbox (1.0.20261001) unstable; urgency=medium
 
   * Name the program holding the guest disk when QEMU cannot lock it: the

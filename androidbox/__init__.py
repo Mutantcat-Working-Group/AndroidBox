@@ -2,4 +2,4 @@
 
 APP_ID = "org.mutantcat.androidbox"
 APP_NAME = "AndroidBox"
-__version__ = "1.0.20261001"
+__version__ = "1.0.20261002"

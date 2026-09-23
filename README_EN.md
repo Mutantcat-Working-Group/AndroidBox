@@ -73,7 +73,7 @@ Core value:
 
 ### 3. Install and Download
 
-Current version is `1.0.20261001`. Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch.
+Current version is `1.0.20261002`. Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch.
 
 Download the installer for your platform from [Releases](https://github.com/Mutantcat-Working-Group/AndroidBox/releases). Double-click to use it; every artifact has passed the CI installation self-check.
 
@@ -96,7 +96,7 @@ Notes:
 
 On first start, click **Prepare example guest disk** to prepare an Ubuntu 24.04 minimal guest disk: it downloads the pinned image, verifies the official SHA256, produces a QCOW2 disk the client recognizes automatically, and generates a NoCloud first-boot seed next to the disk. When the official source is unreachable it falls back to domestic mirrors, and **Use a local image** lets you pick an already downloaded image. After boot the cloud init logs in automatically, sets a known password and installs the Android container in one pass, instead of stopping at `ubuntu login:`.
 
-Pushing a `v*` version tag (for example `v1.0.20261001`, which must match the source version) makes GitHub Actions build all five installers and publish the Release; manual workflow runs only produce CI artifacts and never publish a version. An already published Release is not overwritten by repeat runs.
+Pushing a `v*` version tag (for example `v1.0.20261002`, which must match the source version) makes GitHub Actions build all five installers and publish the Release; manual workflow runs only produce CI artifacts and never publish a version. An already published Release is not overwritten by repeat runs.
 
 ### 4. Quick Start
 
@@ -217,11 +217,11 @@ The bundled Android images are produced by `scripts/build_system_images.py`. Bec
 
 | Platform | Current Version Artifact |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20261001-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20261001-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20261001-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20261001-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20261001-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20261002-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20261002-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20261002-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20261002-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20261002-Linux-aarch64.AppImage` |
 
 Progress is on the [Actions page](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml). The workflow is defined in [Build Desktop Installers](./.github/workflows/desktop.yaml).
 

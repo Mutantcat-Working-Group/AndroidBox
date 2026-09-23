@@ -11,7 +11,7 @@ from androidbox import imagesstore
 from scripts import package_desktop
 
 
-VERSION = "1.0.20261001"
+VERSION = "1.0.20261002"
 MAKENSIS = shutil.which("makensis")
 REPO = Path(__file__).resolve().parents[1]
 

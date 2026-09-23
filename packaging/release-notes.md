@@ -1,5 +1,15 @@
 ## AndroidBox Desktop Preview
 
+## AndroidBox 1.0.20261002
+
+Android reports a working internet connection on first boot now. The Ethernet
+link stayed at partial connectivity on many user networks because Android's
+default validation endpoints are unreachable there, which made apps show no
+internet even though DNS and traffic worked. The guest now answers the
+captive-portal probe itself on the AndroidBox bridge, points Android's
+connectivity checks at that local endpoint, and revalidates once so the link
+comes up validated.
+
 ## AndroidBox 1.0.20261001
 
 When QEMU cannot start because the guest disk is already in use, the client now
