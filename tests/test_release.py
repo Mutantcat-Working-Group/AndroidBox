@@ -61,6 +61,11 @@ class ReleaseTests(unittest.TestCase):
         script = helper.read_text(encoding="utf-8")
         self.assertIn("foreach ($attempt in 1..3)", script)
         self.assertIn("qemu.weilnetz.de", script)
+        self.assertIn("prdownloads.sourceforge.net", script)
+        # A single-element array from an if expression splats one character at a
+        # time, so the helper must build a real array before calling choco.
+        self.assertIn("$arguments = @($Id)", script)
+        self.assertIn("& choco install @arguments", script)
         for workflow in ("check.yaml", "desktop.yaml"):
             body = (ROOT / ".github/workflows" / workflow).read_text(encoding="utf-8")
             with self.subTest(workflow=workflow):
