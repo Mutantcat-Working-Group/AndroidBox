@@ -54,3 +54,15 @@ class ReleaseTests(unittest.TestCase):
             (root / "surprise.exe").write_bytes(b"abc")
             with self.assertRaises(ValueError):
                 collect_checksums(root, "1.0.20260919")
+
+    def test_windows_qemu_installation_survives_a_flaky_chocolatey_feed(self):
+        helper = ROOT / "scripts/install_qemu_windows.ps1"
+        self.assertTrue(helper.is_file(), "the shared Windows QEMU helper is missing")
+        script = helper.read_text(encoding="utf-8")
+        self.assertIn("foreach ($attempt in 1..3)", script)
+        self.assertIn("qemu.weilnetz.de", script)
+        for workflow in ("check.yaml", "desktop.yaml"):
+            body = (ROOT / ".github/workflows" / workflow).read_text(encoding="utf-8")
+            with self.subTest(workflow=workflow):
+                self.assertIn("install_qemu_windows.ps1", body)
+                self.assertNotIn("choco install qemu", body)

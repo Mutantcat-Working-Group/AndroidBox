@@ -55,9 +55,9 @@ jobs:
       - name: Install QEMU (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          choco install qemu --no-progress -y
-          "C:\Program Files\qemu" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        # The Chocolatey feed times out from time to time, so the retry and
+        # upstream-installer fallback live in the shared helper.
+        run: ./scripts/install_qemu_windows.ps1
       - run: python scripts/fetch_novnc.py
       - run: python -m pip install '.[desktop]'
       - name: Test Qt window and disconnected display

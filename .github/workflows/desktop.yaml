@@ -141,8 +141,7 @@ jobs:
               echo "ANDROIDBOX_QEMU_PREFIX=$(brew --prefix qemu)" >> "$GITHUB_ENV"
               ;;
             Windows)
-              choco install nsis --no-progress -y
-              choco install qemu --version=2026.8.11 --no-progress -y
+              powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_qemu_windows.ps1 -IncludeNsis
               echo 'ANDROIDBOX_QEMU_PREFIX=C:\Program Files\qemu' >> "$GITHUB_ENV"
               ;;
           esac
