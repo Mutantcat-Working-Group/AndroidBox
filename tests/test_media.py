@@ -191,6 +191,24 @@ class CameraStreamTests(unittest.TestCase):
         self.assertIsNone(streamer.capture)
         self.assertFalse(streamer.running)
 
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_camera_error_releases_capture_and_reports_macos_permission(self):
+        streamer = camera.CameraStreamer(7101)
+        camera_object = streamer.camera = MagicMock()
+        capture = streamer.capture = MagicMock()
+        streamer.sink = MagicMock()
+        reports = []
+        streamer.status.connect(reports.append)
+        with patch("sys.platform", "darwin"):
+            streamer._camera_error(camera.QCamera.Error.CameraError, "Access to camera not granted")
+        self.assertFalse(streamer.running)
+        self.assertIsNone(streamer.capture)
+        self.assertIsNone(streamer.sink)
+        camera_object.deleteLater.assert_called_once()
+        capture.deleteLater.assert_called_once()
+        self.assertIn("System Settings", reports[-1])
+        self.assertIn("Privacy & Security > Camera", reports[-1])
+
 
 class GuestAudioReportTests(unittest.TestCase):
     def test_the_log_reveals_a_microphone_the_host_refused(self):

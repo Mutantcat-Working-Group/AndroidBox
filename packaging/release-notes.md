@@ -1,5 +1,12 @@
 ## AndroidBox Desktop Preview
 
+## AndroidBox 1.0.20261003
+
+macOS camera startup errors now release capture resources cleanly and explain
+how to grant AndroidBox camera access in System Settings when permission is
+denied. Startup status no longer claims the camera is streaming before capture
+has produced frames.
+
 ## AndroidBox 1.0.20261002
 
 Android reports a working internet connection on first boot now. The Ethernet

@@ -1,3 +1,9 @@
+androidbox (1.0.20261003) unstable; urgency=medium
+
+  * Release the macOS camera permission and resource cleanup improvements.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Wed, 23 Sep 2026 00:00:00 +0800
+
 androidbox (1.0.20261002) unstable; urgency=medium
 
   * Validate Android networking through a local captive-portal probe: the guest

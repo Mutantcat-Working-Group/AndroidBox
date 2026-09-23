@@ -9,6 +9,7 @@ itself comes from QtMultimedia, which is normally present but not guaranteed.
 """
 
 import time
+import sys
 
 
 try:
@@ -96,7 +97,7 @@ if CAMERA_STACK:
             self.camera.errorOccurred.connect(self._camera_error)
             self.socket.connectToHost("127.0.0.1", self.port)
             self.camera.start()
-            self.status.emit(f"Camera streaming into the guest: {self.device}")
+            self.status.emit(f"Starting host camera: {self.device}")
             return True
 
         def stop(self):
@@ -139,8 +140,24 @@ if CAMERA_STACK:
                 self.socket.connectToHost("127.0.0.1", self.port)
 
         def _camera_error(self, error, message):
-            if self.camera is not None:
-                self.status.emit(f"Camera error: {message}")
+            if self.camera is None:
+                return
+            text = str(message).strip() or "Unknown camera error"
+            camera, self.camera = self.camera, None
+            capture, self.capture = self.capture, None
+            self.sink = None
+            camera.stop()
+            camera.deleteLater()
+            if capture is not None:
+                capture.deleteLater()
+            self.socket.abort()
+            if sys.platform == "darwin" and "not granted" in text.lower():
+                self.status.emit(
+                    "Camera permission denied. Allow AndroidBox in System Settings > "
+                    "Privacy & Security > Camera, then restart AndroidBox."
+                )
+            else:
+                self.status.emit(f"Camera error: {text}")
 
 else:
 
