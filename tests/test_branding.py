@@ -102,6 +102,12 @@ class BrandingTests(unittest.TestCase):
         self.assertIn("/usr/share/androidbox-extra/images", provision)
         self.assertIn("install_preinstalled_images", provision)
 
+    def test_guest_installs_network_validation_helper(self):
+        provision = (ROOT / "guest/provision.sh").read_text()
+        self.assertIn("/usr/local/lib/androidbox/net-portal.py", provision)
+        self.assertIn("/etc/systemd/system/androidbox-net-portal.service", provision)
+        self.assertIn("androidbox-net-portal.service", provision)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -148,6 +148,8 @@ install -m 0755 "$source_dir/guest/session.sh" /usr/local/bin/androidbox-guest-s
 install -m 0755 "$source_dir/guest/adb-forward.sh" /usr/local/bin/androidbox-adb-forward
 install -m 0644 "$source_dir/guest/adb-forward.service" /etc/systemd/system/androidbox-adb-forward.service
 install -d /usr/local/lib/androidbox
+install -m 0644 "$source_dir/guest/net-portal.py" /usr/local/lib/androidbox/net-portal.py
+install -m 0644 "$source_dir/guest/net-portal.service" /etc/systemd/system/androidbox-net-portal.service
 install -m 0644 "$source_dir/guest/camera-bridge.py" /usr/local/lib/androidbox/camera-bridge.py
 install -m 0644 "$source_dir/guest/camera-bridge.service" /etc/systemd/system/androidbox-camera-bridge.service
 install -m 0644 "$source_dir/guest/greetd.toml" /etc/greetd/config.toml
@@ -172,7 +174,7 @@ with path.open('w') as stream:
 PY
 androidbox upgrade -o
 systemctl daemon-reload
-systemctl enable androidbox-container.service androidbox-adb-forward.service greetd.service
+systemctl enable androidbox-container.service androidbox-adb-forward.service androidbox-net-portal.service greetd.service
 if [[ -n $camera_device ]]; then
     systemctl enable androidbox-camera-bridge.service
 fi

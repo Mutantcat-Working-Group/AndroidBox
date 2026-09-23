@@ -68,6 +68,8 @@ class SeedTests(unittest.TestCase):
             with archive.open("rb") as stream, tarfile.open(fileobj=stream, mode="r:gz") as tar:
                 names = tar.getnames()
         self.assertIn("androidbox/guest/provision.sh", names)
+        self.assertIn("androidbox/guest/net-portal.py", names)
+        self.assertIn("androidbox/guest/net-portal.service", names)
         self.assertIn("androidbox/Makefile", names)
         self.assertIn("androidbox/guest/vendor/libglibutil/Makefile", names)
         self.assertIn("androidbox/guest/vendor/libgbinder/Makefile", names)
