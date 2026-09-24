@@ -1,3 +1,5 @@
+# AndroidBox — 由异猫工作群（mutantcat.org）发行
+# GitHub: https://github.com/Mutantcat-Working-Group
 """Qt desktop shell for the QEMU display and the optional Linux-native backend."""
 
 from concurrent.futures import ThreadPoolExecutor
@@ -20,7 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import APP_ID, APP_NAME, guestdisk, seed
+from . import APP_ID, APP_NAME, PUBLISHER_LABEL, PUBLISHER_URL, guestdisk, seed
 from .camera import CameraStreamer
 from .adb import install_apk, transfer_files, executable as adb_executable
 from .display import DisplayServer
@@ -167,6 +169,7 @@ class SettingsDialog(QDialog):
         self.cpus.setRange(1, 128)
         self.cpus.setValue(config.cpus)
         form.addRow("CPU cores", self.cpus)
+        self.publisher = self.publisher_row(form)
         self.arch.currentTextChanged.connect(self.update_detected_paths)
         self.binary.textChanged.connect(self.update_detected_paths)
         self.arch.currentTextChanged.connect(lambda: self.update_cpu_models())
@@ -187,6 +190,21 @@ class SettingsDialog(QDialog):
         firmware = config.resolved_firmware()
         self.firmware.setPlaceholderText(f"Automatic: {firmware or ('Not found' if config.arch == 'aarch64' else 'Not required')}")
         self.firmware.setToolTip(self.firmware.placeholderText())
+
+    def publisher_row(self, form):
+        publisher = QLabel(PUBLISHER_LABEL)
+        publisher.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        link = QLabel(f'<a href="{PUBLISHER_URL}">{PUBLISHER_URL}</a>')
+        link.setOpenExternalLinks(True)
+        link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(publisher)
+        layout.addWidget(link)
+        layout.addStretch()
+        form.addRow("Publisher", row)
+        return publisher
 
     def update_cpu_models(self, preferred=None):
         values = ["auto", "host", "max", "qemu64"] if self.arch.currentText() == "x86_64" else ["auto", "host", "max"]

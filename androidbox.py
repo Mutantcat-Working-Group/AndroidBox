@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# AndroidBox — 由异猫工作群（mutantcat.org）发行
+# GitHub: https://github.com/Mutantcat-Working-Group
 # Copyright 2021 Oliver Smith
 # SPDX-License-Identifier: GPL-3.0-or-later
 # PYTHON_ARGCOMPLETE_OK
