@@ -6,7 +6,7 @@
 
 ### 一、产品概述
 
-- 基于 [Waydroid](https://github.com/waydroid/waydroid) 改造的 **Android 窗口化运行工具**，保留 Linux 原生容器后端，并提供基于 Qt、QEMU 和 noVNC 的跨平台桌面客户端。
+- 一款 **Android 窗口化运行工具**：保留 Linux 原生容器后端，并提供基于 Qt、QEMU 和 noVNC 的跨平台桌面客户端。
 - **窗口化界面**：内嵌 noVNC 显示，支持全屏、运行日志和虚拟机设置；日志栏默认收起，工具栏按钮一键展开。
 - **虚拟机管理**：配置磁盘、架构、内存、CPU、CPU 型号、TCG 线程和磁盘缓存，支持启动、正常关机与强制停止。
 - **QEMU 兼容层**：探测 Linux KVM、macOS HVF、Windows WHPX；自动模式在跨架构或未发现硬件加速时回退 TCG，一个客户端覆盖三平台。
@@ -16,6 +16,7 @@
 - **声音与摄像头**：默认挂载模拟声卡与 V4L2 摄像头，安卓应用、媒体播放和录音走宿主机音频设备，宿主机摄像头画面实时推送到安卓相机应用；宿主没有摄像头时相机显示测试图案。
 - **休眠看门狗**：运行期间阻止宿主机合盖休眠与空闲睡眠，客体被宿主异常中断后自动重启，最多 5 次。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
+- **发行方** 由异猫工作群（mutantcat.org）发行，GitHub: https://github.com/Mutantcat-Working-Group
 
 核心价值：
 
@@ -229,7 +230,7 @@ Linux 原生容器后端依赖 LXC、支持 Binder 的内核、Wayland、D-Bus�
 
 ### 七、开源协议
 
-- 本项目以 MIT 协议发布，许可证见 [LICENSE](./LICENSE)。
+- 本项目以 GPL-3.0 协议发布，许可证见 [LICENSE](./LICENSE)。
 - 上游项目：[Waydroid](https://github.com/waydroid/waydroid)、[QEMU](https://www.qemu.org/)。
 - 问题反馈请到 [issues](https://github.com/Mutantcat-Working-Group/AndroidBox/issues)。
 

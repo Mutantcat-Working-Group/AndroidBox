@@ -6,7 +6,7 @@
 
 ### 1. Overview
 
-- A windowed runner for Android based on [Waydroid](https://github.com/waydroid/waydroid). The Linux native container backend is preserved, and a cross-platform desktop client built on Qt, QEMU and noVNC is provided.
+- A windowed runner for Android: the Linux native container backend is preserved, and a cross-platform desktop client built on Qt, QEMU and noVNC is provided.
 - **Windowed Interface**: Embedded noVNC display with fullscreen, run log and virtual machine settings; the log pane stays collapsed by default and opens from the toolbar button.
 - **Virtual Machine Management**: Configure disk, architecture, memory, CPU, CPU model, TCG threads and disk cache, with start, graceful shutdown and force stop.
 - **QEMU Compatibility Layer**: Detects Linux KVM, macOS HVF and Windows WHPX; the automatic mode falls back to TCG on cross-architecture guests or when no hardware acceleration is found, so one client covers all three platforms.
@@ -16,6 +16,7 @@
 - **Sound and Camera**: An emulated sound card and a V4L2 camera are attached by default, so Android apps, media playback and recording use the host audio devices while the camera app sees the host webcam; hosts without a webcam get a test pattern instead.
 - **Sleep Watchdog**: While running it blocks host lid-close sleep and idle sleep, and restarts the guest automatically if it is interrupted by the host, up to 5 times.
 - **Unified App Identity**: The product name is AndroidBox and the application ID is `org.mutantcat.androidbox`.
+- **Publisher** Mutantcat Working Group (mutantcat.org) · GitHub: https://github.com/Mutantcat-Working-Group
 
 Core value:
 
@@ -229,12 +230,6 @@ The native Linux container backend depends on LXC, a kernel with Binder support,
 
 ### 7. License
 
-- This project is released under the MIT License; see [LICENSE](./LICENSE).
+- This project is released under the GPL-3.0 License; see [LICENSE](./LICENSE).
 - Upstream projects: [Waydroid](https://github.com/waydroid/waydroid) and [QEMU](https://www.qemu.org/).
 - Please report issues to [issues](https://github.com/Mutantcat-Working-Group/AndroidBox/issues).
-
----
-
-## Acknowledgments
-
-This repository is a fork of [waydroid/waydroid](https://github.com/waydroid/waydroid). Thanks to the original authors for their open-source work; this repository continues to build upon it.
