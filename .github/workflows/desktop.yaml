@@ -174,6 +174,51 @@ jobs:
             *) target='dist/AndroidBox/AndroidBox' ;;
           esac
           python scripts/verify_frozen.py "$target" --require-runtime --require-images
+      # NSIS embeds the payload as-is, so the executable must carry its
+      # signature before makensis reads it into the installer database.
+      - name: Create Windows code-signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfx = Join-Path $env:RUNNER_TEMP 'mutantcat-code-signing.pfx'
+          $password = 'mutantcat'
+          $cert = New-SelfSignedCertificate `
+            -Subject 'CN=Mutantcat Working Group, O=Mutantcat Working Group, C=CN' `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -KeyUsage DigitalSignature `
+            -Type CodeSigningCert `
+            -KeyExportPolicy Exportable `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -NotAfter (Get-Date).AddYears(10)
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString -String $password -Force -AsPlainText) | Out-Null
+          "PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SIGN_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $signtool = $null
+          foreach ($kit in (Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Directory | Sort-Object Name -Descending)) {
+            $candidate = Join-Path $kit.FullName 'x64\signtool.exe'
+            if (Test-Path $candidate) { $signtool = $candidate; break }
+          }
+          if (-not $signtool) { throw 'signtool.exe not found in the Windows SDK' }
+          "SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Sign Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:PFX_PATH -or -not $env:SIGNTOOL_PATH) { throw 'code-signing setup did not run' }
+          $payload = 'dist/AndroidBox'
+          $targets = @()
+          foreach ($pattern in 'AndroidBox.exe', 'qemu-system-*.exe', 'qemu-img.exe', 'adb.exe', '*.dll') {
+            $targets += Get-ChildItem -Path $payload -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue
+          }
+          $targets = $targets | Sort-Object FullName -Unique
+          if ($targets.Count -eq 0) { throw "no Windows binaries found under $payload" }
+          foreach ($target in $targets) {
+            & $env:SIGNTOOL_PATH sign /fd SHA256 /f $env:PFX_PATH /p $env:SIGN_PASSWORD /d 'AndroidBox' "$($target.FullName)"
+            echo "signed $($target.Name)"
+          }
       - name: Create installer
         shell: bash
         run: |
@@ -187,6 +232,29 @@ jobs:
           else
             python scripts/package_desktop.py --arch ${{ matrix.arch }}
           fi
+      # makensis has already copied the payload and the image disk is appended,
+      # so the finished installer is the last artifact that still needs a seal.
+      - name: Sign and verify Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:PFX_PATH -or -not $env:SIGNTOOL_PATH) { throw 'code-signing setup did not run' }
+          $installers = @(Get-ChildItem 'dist/installers/*-Setup.exe')
+          if ($installers.Count -eq 0) { throw 'no Windows installer found' }
+          foreach ($installer in $installers) {
+            & $env:SIGNTOOL_PATH sign /fd SHA256 /f $env:PFX_PATH /p $env:SIGN_PASSWORD /d 'AndroidBox Installer' "$($installer.FullName)"
+            $signature = Get-AuthenticodeSignature $installer.FullName
+            if (-not $signature.SignerCertificate -or $signature.SignerCertificate.Subject -notlike '*CN=Mutantcat Working Group*') {
+              throw "$($installer.Name) is not self-signed by Mutantcat Working Group ($($signature.Status))"
+            }
+            echo "signed $($installer.Name)"
+          }
+          $app = 'dist/AndroidBox/AndroidBox.exe'
+          $signature = Get-AuthenticodeSignature $app
+          if (-not $signature.SignerCertificate -or $signature.SignerCertificate.Subject -notlike '*CN=Mutantcat Working Group*') {
+            throw "$app lost its signature during bundling ($($signature.Status))"
+          }
       - name: Create portable tar.gz
         shell: bash
         run: |
@@ -213,7 +281,7 @@ jobs:
           $process = Start-Process -FilePath $installer -ArgumentList "/S /D=$install" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "NSIS install failed: $($process.ExitCode)" }
           try {
-            $entry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AndroidBox'
+            $entry = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AndroidBox'
             if ($entry.UninstallString -ne "`"$install\Uninstall.exe`"") { throw 'Invalid registered uninstall command' }
             if ($entry.QuietUninstallString -ne "`"$install\Uninstall.exe`" /S") { throw 'Invalid registered silent uninstall command' }
             python scripts/verify_frozen.py "$install/AndroidBox.exe" --require-runtime --require-images

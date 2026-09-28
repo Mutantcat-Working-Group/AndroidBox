@@ -36,8 +36,18 @@ def verify(executable, require_runtime=False, require_images=False):
     print(f"Frozen Qt/noVNC self-test passed: {executable}")
 
 
+def assert_adhoc_signed(target):
+    """Reject a seal that a paid certificate could have produced instead."""
+    completed = subprocess.run(["codesign", "-dv", str(target)],
+                                capture_output=True, text=True)
+    details = (completed.stdout + completed.stderr).strip()
+    if "Signature=adhoc" not in details:
+        raise ValueError(f"{target} is not ad-hoc signed: {details}")
+
+
 def verify_dmg(image, require_runtime=False, require_images=False):
     image = Path(image).resolve(strict=True)
+    assert_adhoc_signed(image)
     subprocess.run(["codesign", "--verify", "--verbose=2", str(image)], check=True)
     subprocess.run(["hdiutil", "verify", str(image)], check=True)
     with tempfile.TemporaryDirectory(prefix="androidbox-mount-") as directory:
@@ -45,7 +55,11 @@ def verify_dmg(image, require_runtime=False, require_images=False):
         subprocess.run(["hdiutil", "attach", str(image), "-readonly", "-nobrowse",
                         "-mountpoint", str(mount)], check=True, timeout=120)
         try:
+            shortcut = mount / "Applications"
+            if not shortcut.is_symlink() or os.readlink(shortcut) != "/Applications":
+                raise ValueError("The disk image is missing its /Applications shortcut")
             app = mount / "AndroidBox.app"
+            assert_adhoc_signed(app)
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
             verify(app / "Contents/MacOS/AndroidBox", require_runtime=require_runtime,
                    require_images=require_images)
