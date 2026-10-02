@@ -198,7 +198,13 @@ class BridgeAcceptLoopTests(unittest.TestCase):
 
     def test_a_port_the_guest_already_took_makes_open_listener_give_up(self):
         squatter = socket.socket()
-        squatter.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            # Windows lets a socket that set SO_REUSEADDR take a port another
+            # socket already bound, so the squatter has to claim the port
+            # exclusively for the conflict this test describes to exist there.
+            squatter.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            squatter.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         squatter.bind(("0.0.0.0", 0))
         squatter.listen(1)
         port = squatter.getsockname()[1]
@@ -339,8 +345,11 @@ class TestPatternTests(unittest.TestCase):
 class PreviewServerTests(unittest.TestCase):
     def connect(self):
         server = bridge.start_preview(self.latest, bind=("127.0.0.1", 0))
-        self.addCleanup(server.shutdown)
+        # Cleanups run last in first out, so the accept loop is stopped before
+        # the listener is closed. Windows refuses a select on a socket whose
+        # thread has already closed it, which surfaces as a stray traceback.
         self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
         self.port = server.server_address[1]
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5.0)
         self.addCleanup(connection.close)
