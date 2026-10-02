@@ -17,7 +17,7 @@ import time
 CAMERA_PORT = 7100
 # How long the guest waits for host frames before it puts the test pattern back
 # on screen, and how often that pattern is refreshed while it keeps waiting.
-IDLE_FALLBACK = 3.0
+IDLE_FALLBACK = 5.0
 TEST_PATTERN_INTERVAL = 2.0
 STILL_PATTERN = Path("/var/lib/androidbox/camera-pattern.jpg")
 

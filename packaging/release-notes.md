@@ -1,3 +1,13 @@
+## AndroidBox 1.0.20261004
+
+The host webcam feeds the Android camera app again on macOS. Qt's FFmpeg
+media backend only pushes frames to a video sink while the capture session
+has a recorder attached, so the camera claimed to be active while delivering
+zero frames and the guest bridge kept dropping the connection. The capture
+session now keeps a dormant recorder attached, and the guest's vivid fallback
+hands the guest camera bridge a video node that exists instead of leaving the
+bridge service disabled.
+
 ## AndroidBox Desktop Preview
 
 ## AndroidBox 1.0.20261003

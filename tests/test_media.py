@@ -173,13 +173,17 @@ class CameraStreamTests(unittest.TestCase):
     def test_frames_flow_through_a_capture_session(self):
         # QCamera carries no video sink of its own, so the frames have to
         # travel through the capture session that owns both camera and sink.
+        # A dormant recorder rides along because the FFmpeg media backend
+        # only pumps frames into the sink while one is attached.
         streamer = camera.CameraStreamer(7101)
         device = type("Device", (), {"isNull": staticmethod(lambda: False),
                                      "description": staticmethod(lambda: "Test Camera")})()
         mock_camera = MagicMock()
+        mock_recorder = MagicMock()
         with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
                 patch.object(camera, "QCamera", mock_camera), \
                 patch.object(camera, "QMediaCaptureSession", MagicMock()), \
+                patch.object(camera, "QMediaRecorder", mock_recorder), \
                 patch.object(camera, "QVideoSink", MagicMock()), \
                 patch.object(streamer, "_request_camera_permission", return_value=True):
             self.assertTrue(streamer.start())
@@ -187,10 +191,13 @@ class CameraStreamTests(unittest.TestCase):
             session = camera.QMediaCaptureSession.return_value
             session.setCamera.assert_called_once_with(mock_camera.return_value)
             self.assertIs(session.setVideoSink.call_args.args[0], camera.QVideoSink.return_value)
+            session.setRecorder.assert_called_once_with(mock_recorder.return_value)
             mock_camera.return_value.start.assert_called_once()
             streamer.stop()
             mock_camera.return_value.stop.assert_called_once()
+            mock_recorder.return_value.deleteLater.assert_called_once()
         self.assertIsNone(streamer.capture)
+        self.assertIsNone(streamer.recorder)
         self.assertFalse(streamer.running)
 
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")

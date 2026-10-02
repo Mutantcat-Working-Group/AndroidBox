@@ -11,13 +11,17 @@ itself comes from QtMultimedia, which is normally present but not guaranteed.
 import time
 import sys
 
+import tempfile
+from pathlib import Path
+
 
 try:
     from PySide6.QtCore import (QBuffer, QCameraPermission, QCoreApplication, QIODevice,
-                                QObject, Qt, QTimer, Signal)
+                                QObject, Qt, QTimer, Signal, QUrl)
     from PySide6.QtGui import QImage
     from PySide6.QtNetwork import QAbstractSocket, QTcpSocket
-    from PySide6.QtMultimedia import QCamera, QMediaCaptureSession, QMediaDevices, QVideoSink
+    from PySide6.QtMultimedia import (QCamera, QMediaCaptureSession, QMediaDevices,
+                                      QMediaRecorder, QVideoSink)
 
     CAMERA_STACK = True
 except ImportError:  # pragma: no cover - QtMultimedia is optional
@@ -74,6 +78,7 @@ if CAMERA_STACK:
             self.device = ""
             self.camera = None
             self.capture = None
+            self.recorder = None
             self.sink = None
             self.sent = 0
             self._previous_frame = 0.0
@@ -108,6 +113,11 @@ if CAMERA_STACK:
         def _start_capture(self, device):
             if self.camera is not None:
                 return
+            # Qt's FFmpeg media backend only pumps frames into a video sink
+            # while the capture session has a recorder attached, and it keeps
+            # doing that even for a recorder that never records. Without one
+            # the camera starts and stays active while every platform reports
+            # zero frames, which looks exactly like a permission problem.
             self.sink = QVideoSink(self)
             self.sink.videoFrameChanged.connect(self.send_frame)
             # QCamera has no video sink of its own, so the frames flow through
@@ -116,12 +126,21 @@ if CAMERA_STACK:
             self.capture = QMediaCaptureSession(self)
             self.capture.setCamera(self.camera)
             self.capture.setVideoSink(self.sink)
+            self._attach_recorder()
             self.camera.errorOccurred.connect(self._camera_error)
             self._reconnect_attempts = 0
             self._connected_at = 0.0
             self.socket.connectToHost("127.0.0.1", self.port)
             self.camera.start()
             self.status.emit(f"Starting host camera: {self.device}")
+
+        def _attach_recorder(self):
+            """Keep a dormant recorder on the session so the sink sees frames."""
+            self.recorder = QMediaRecorder(self)
+            self.recorder.setQuality(QMediaRecorder.Quality.LowQuality)
+            self.recorder.setOutputLocation(
+                QUrl.fromLocalFile(str(Path(tempfile.gettempdir()) / "androidbox-camera.mp4")))
+            self.capture.setRecorder(self.recorder)
 
         def _request_camera_permission(self, device):
             """Return True when capture may start, False when denied, None while asking."""
@@ -169,6 +188,9 @@ if CAMERA_STACK:
                 self.camera.stop()
                 self.camera.deleteLater()
                 self.camera = None
+            if self.recorder is not None:
+                self.recorder.deleteLater()
+                self.recorder = None
             if self.capture is not None:
                 self.capture.deleteLater()
                 self.capture = None

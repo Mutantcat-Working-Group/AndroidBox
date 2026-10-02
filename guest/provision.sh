@@ -85,6 +85,15 @@ EOF
 elif modprobe vivid; then
     printf 'vivid\n' > /etc/modules-load.d/androidbox-video.conf
     echo "WARNING: v4l2loopback unavailable; the camera shows a test pattern only." >&2
+    # vivid still has to hand the camera bridge a node that exists, or the
+    # bridge service silently stays disabled and the camera app has nothing.
+    for _ in $(seq 1 20); do
+        for node in /dev/video0 /dev/video1 /dev/video2 /dev/video3; do
+            [[ -c $node ]] && { camera_device=$node; break 2; }
+        done
+        sleep 0.5
+    done
+    [[ -n $camera_device ]] || echo "WARNING: vivid created no video node." >&2
 else
     echo "WARNING: no video capture driver could be loaded." >&2
 fi
@@ -152,6 +161,9 @@ install -m 0644 "$source_dir/guest/net-portal.py" /usr/local/lib/androidbox/net-
 install -m 0644 "$source_dir/guest/net-portal.service" /etc/systemd/system/androidbox-net-portal.service
 install -m 0644 "$source_dir/guest/camera-bridge.py" /usr/local/lib/androidbox/camera-bridge.py
 install -m 0644 "$source_dir/guest/camera-bridge.service" /etc/systemd/system/androidbox-camera-bridge.service
+if [[ -n $camera_device && $camera_device != /dev/video0 ]]; then
+    sed -i "s#/dev/video0#$camera_device#" /etc/systemd/system/androidbox-camera-bridge.service
+fi
 install -m 0644 "$source_dir/guest/greetd.toml" /etc/greetd/config.toml
 
 androidbox init

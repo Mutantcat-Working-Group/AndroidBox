@@ -1,3 +1,14 @@
+androidbox (1.0.20261004) unstable; urgency=medium
+
+  * Stream the host webcam into the Android camera app again on macOS. Qt's
+    FFmpeg media backend only pushes frames to the video sink while the
+    capture session has a recorder attached, so the camera reported itself
+    active while delivering zero frames. The session now keeps a dormant
+    recorder attached, and the vivid fallback hands the guest camera bridge
+    a video node that exists instead of leaving the service disabled.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Fri, 02 Oct 2026 00:00:00 +0800
+
 androidbox (1.0.20261003) unstable; urgency=medium
 
   * Release the macOS camera permission and resource cleanup improvements.
