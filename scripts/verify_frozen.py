@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import sys
 import subprocess
 import tempfile
 
@@ -21,8 +22,23 @@ def verify(executable, require_runtime=False, require_images=False):
             command.append("--require-runtime")
         if require_images:
             command.append("--require-images")
-        subprocess.run(command,
-                       cwd=root, env=environment, timeout=90, check=True)
+        # A windowed frozen executable has no console, so its output is the only
+        # way a failing self-test can explain itself inside CI logs.
+        completed = subprocess.run(command, cwd=root, env=environment, timeout=90,
+                                   capture_output=True, text=True, errors="replace")
+        if completed.stdout:
+            print(completed.stdout.strip())
+        if completed.stderr:
+            print(completed.stderr.strip(), file=sys.stderr)
+        if completed.returncode != 0:
+            if report.is_file():
+                try:
+                    print("self-test report: " + report.read_text(encoding="utf-8").strip())
+                except OSError:
+                    pass
+            raise subprocess.CalledProcessError(completed.returncode, command,
+                                                output=completed.stdout,
+                                                stderr=completed.stderr)
         result = json.loads(report.read_text(encoding="utf-8"))
         if result.get("passed") is not True or result.get("frozen") is not True:
             raise ValueError(f"Frozen application self-test failed: {result}")

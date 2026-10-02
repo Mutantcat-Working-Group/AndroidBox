@@ -156,6 +156,35 @@ class CameraStreamTests(unittest.TestCase):
         self.assertFalse(streamer.running)
         self.assertIn("no video input device", reports[0])
 
+    def test_guest_camera_count_comes_from_dumpsys(self):
+        self.assertEqual(camera.parse_guest_camera_count("Number of camera devices: 0"), 0)
+        self.assertEqual(camera.parse_guest_camera_count("Number of camera devices: 2"), 2)
+        self.assertIsNone(camera.parse_guest_camera_count("nothing here"))
+        self.assertIsNone(camera.parse_guest_camera_count(""))
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_a_guest_without_a_camera_hal_says_so(self):
+        streamer = camera.CameraStreamer(7101)
+        streamer.set_guest_probe("/bundle/adb", "127.0.0.1:5555")
+        reports = []
+        streamer.status.connect(reports.append)
+        blind = subprocess.CompletedProcess([], 0, "Number of camera devices: 0", "")
+        with patch("androidbox.camera.run", return_value=blind):
+            streamer._run_guest_camera_probe()
+        self.assertIn("no camera HAL", reports[0])
+        answering = subprocess.CompletedProcess([], 0, "Number of camera devices: 1", "")
+        with patch("androidbox.camera.run", return_value=answering):
+            streamer._run_guest_camera_probe()
+        self.assertIn("1 camera device", reports[1])
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_a_probe_that_cannot_run_stays_quiet(self):
+        streamer = camera.CameraStreamer(7101)
+        reports = []
+        streamer.status.connect(reports.append)
+        streamer._run_guest_camera_probe()  # no probe configured
+        self.assertEqual(reports, [])
+
     def test_without_multimedia_the_streamer_never_touches_a_camera(self):
         # A frozen build can ship without QtMultimedia; the placeholder keeps
         # every caller working instead of failing the import.
@@ -349,8 +378,12 @@ class DesktopMediaTests(unittest.TestCase):
         stopped = []
 
         class FakeStreamer:
-            def __init__(self, port=None, parent=None):
-                self.port = port
+            def __init__(self, *args, **kwargs):
+                self.port = args[0] if args else kwargs.get("port")
+                self.probe = None
+
+            def set_guest_probe(self, adb, target):
+                self.probe = (adb, target)
 
             def start(self):
                 started.append(self.port)

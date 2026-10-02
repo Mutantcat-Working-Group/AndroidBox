@@ -19,6 +19,32 @@ from androidbox.runtime import VMConfig, load_config, reserve_ports
 
 
 def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    try:
+        return run_self_test(arguments)
+    except Exception as error:
+        # A frozen windowed executable has no console, so the report is the
+        # only channel that can tell a CI verifier what went wrong.
+        _write_startup_report(arguments, f"{type(error).__name__}: {error}")
+        return 1
+
+
+def _write_startup_report(arguments, message):
+    if "--report" not in arguments:
+        return
+    index = arguments.index("--report") + 1
+    if index >= len(arguments):
+        return
+    path = Path(arguments[index])
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"passed": False, "frozen": bool(getattr(sys, "frozen", False)),
+                                    "stage": "startup", "errors": [message]}) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def run_self_test(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--screenshot", default=str(Path(tempfile.gettempdir()) / "androidbox-desktop.png"))
     parser.add_argument("--report", type=Path)

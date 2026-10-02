@@ -99,9 +99,6 @@ jobs:
           - os: windows-2022
             arch: x86_64
             images: x86_64
-          - os: windows-11-arm
-            arch: aarch64
-            images: aarch64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:

@@ -8,10 +8,11 @@ Linux. The encoder only needs QtGui, which every platform has; the camera
 itself comes from QtMultimedia, which is normally present but not guaranteed.
 """
 
-import time
+import re
 import sys
-
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 
@@ -28,6 +29,9 @@ except ImportError:  # pragma: no cover - QtMultimedia is optional
     CAMERA_STACK = False
 
 
+from .process import run
+
+
 # A webcam sends more frames than an Android display can use, and every frame
 # is encoded and pushed to the guest over TCP.
 FRAME_INTERVAL = 1.0 / 15
@@ -36,6 +40,11 @@ JPEG_QUALITY = 70
 MAX_CAMERA_RECONNECTS = 5
 CAMERA_RECONNECT_DELAY_MS = 1500
 CAMERA_STABLE_CONNECTION_SECONDS = 10.0
+GUEST_CAMERA_HAL_MISSING = (
+    "The bundled Android image provides no camera HAL, so Android camera apps see no "
+    "device and the webcam stream has nowhere to land. A guest image with a camera "
+    "HAL is required for the in-guest camera."
+)
 CAMERA_PERMISSION_DENIED = (
     "Camera permission denied. Allow AndroidBox in System Settings > "
     "Privacy & Security > Camera, then restart AndroidBox."
@@ -65,6 +74,12 @@ def host_camera_names():
     return [device.description() for device in QMediaDevices.videoInputs()]
 
 
+def parse_guest_camera_count(output):
+    """Return how many camera devices the guest reports, or None when unknown."""
+    match = re.search(r"Number of camera devices:\s*(\d+)", output or "")
+    return int(match.group(1)) if match else None
+
+
 if CAMERA_STACK:
 
     class CameraStreamer(QObject):
@@ -85,9 +100,21 @@ if CAMERA_STACK:
             self._reconnect_attempts = 0
             self._connected_at = 0.0
             self._pending_device = None
+            self.adb = None
+            self.target = None
+            self._probed_guest = False
             self.socket = QTcpSocket(self)
             self.socket.connected.connect(self._connected)
             self.socket.disconnected.connect(self._disconnected)
+
+        def set_guest_probe(self, adb, target):
+            """Teach the streamer how to ask the guest what it can see.
+
+            The guest bridge proves only that something is listening on the far
+            side; whether Android itself exposes a camera is a separate
+            question the streamer reports instead of leaving the user guessing.
+            """
+            self.adb, self.target = adb, target
 
         @property
         def running(self):
@@ -215,6 +242,27 @@ if CAMERA_STACK:
         def _connected(self):
             self._connected_at = time.monotonic()
             self.status.emit(f"Camera connected to the guest: {self.device}")
+            self._probe_guest_camera()
+
+        def _probe_guest_camera(self):
+            if self._probed_guest or not self.adb or not self.target:
+                return
+            self._probed_guest = True
+            threading.Thread(target=self._run_guest_camera_probe, daemon=True).start()
+
+        def _run_guest_camera_probe(self):
+            if not self.adb or not self.target:
+                return
+            try:
+                result = run([self.adb, "-s", self.target, "shell", "dumpsys",
+                              "media.camera"], timeout=20)
+            except Exception:
+                return
+            count = parse_guest_camera_count(result.stdout)
+            if count == 0:
+                self.status.emit(GUEST_CAMERA_HAL_MISSING)
+            elif count:
+                self.status.emit(f"The guest exposes {count} camera device(s) to Android")
 
         def _disconnected(self):
             if self.camera is None:

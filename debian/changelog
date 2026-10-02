@@ -1,4 +1,4 @@
-androidbox (1.0.20261004) unstable; urgency=medium
+androidbox (1.0.20261005) unstable; urgency=medium
 
   * Stream the host webcam into the Android camera app again on macOS. Qt's
     FFmpeg media backend only pushes frames to the video sink while the

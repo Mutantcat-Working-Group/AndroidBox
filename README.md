@@ -74,7 +74,7 @@
 
 ### 三、安装与下载
 
-当前版本 `1.0.20261004`。安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。
+当前版本 `1.0.20261005`。安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。
 
 从 [Releases](https://github.com/Mutantcat-Working-Group/AndroidBox/releases) 下载对应平台的安装包，双击即可使用，全部产物已通过 CI 安装自检。
 
@@ -97,7 +97,7 @@
 
 首次启动点击 **Prepare example guest disk** 即可准备 Ubuntu 24.04 minimal 客体盘：下载固定版本镜像、校验官方 SHA256，生成客户端可自动识别的 QCOW2 磁盘，并在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退国内镜像，也可用 **Use a local image** 选择已下载镜像。开机后云端初始化自动登录、设置已知密码并一次性安装 Android 容器，不再停留在 `ubuntu login:`。
 
-推送 `v*` 版本标签（例如 `v1.0.20261004`，标签需与源码版本一致）即由 GitHub Actions 自动构建五个安装包并联编 Release；在 Actions 页面手动运行只产出 CI 制品，不发布版本。已发布的 Release 不会被重复运行覆盖。
+推送 `v*` 版本标签（例如 `v1.0.20261005`，标签需与源码版本一致）即由 GitHub Actions 自动构建五个安装包并联编 Release；在 Actions 页面手动运行只产出 CI 制品，不发布版本。已发布的 Release 不会被重复运行覆盖。
 
 ### 四、快速上手
 
@@ -218,11 +218,13 @@ macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整 `dist/AndroidBox
 
 | 平台 | 当前版本产物 |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20261004-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20261004-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20261004-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20261004-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20261004-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20261005-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20261005-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20261005-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20261005-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20261005-Linux-aarch64.AppImage` |
+
+Windows on ARM（骁龙 X Elite 等）暂无原生 ARM64 安装包：Qt for Python 未提供 Windows ARM64 的官方二进制，原生构建的客户端无法启动。这类设备请下载 x86_64 安装包，由 Windows 11 的 ARM64 兼容层运行；若 x64 仿真不可用（部分虚拟机或精简系统），可改用同一局域网其他机器配合 noVNC 访问。
 
 进度见 [Actions 页面](https://github.com/Mutantcat-Working-Group/AndroidBox/actions/workflows/desktop.yaml)。工作流定义见 [Build Desktop Installers](./.github/workflows/desktop.yaml)。
 

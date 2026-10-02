@@ -769,6 +769,11 @@ class MainWindow(QMainWindow):
         signal = getattr(self.camera, "status", None)
         if signal is not None:
             signal.connect(self.report)
+        # With ADB reachable the streamer can ask the guest which cameras
+        # Android really sees, instead of claiming a success it cannot verify.
+        probe = getattr(self.camera, "set_guest_probe", None)
+        if probe is not None:
+            probe(adb_executable(), f"127.0.0.1:{self.vm.adb_port}")
         if not self.camera.start():
             self.camera = None
 

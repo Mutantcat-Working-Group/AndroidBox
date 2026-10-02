@@ -1,5 +1,8 @@
 import sys
+import json
+import tempfile
 from types import SimpleNamespace
+from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 
@@ -33,3 +36,14 @@ class EntrypointTests(unittest.TestCase):
                 patch.object(sys, "argv", ["AndroidBox"]):
             self.assertEqual(main(), 0)
         desktop.assert_called_once_with()
+
+    def test_missing_dependency_writes_a_self_test_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "nested" / "result.json"
+            with patch.dict(sys.modules, {"androidbox.selftest": None, "androidbox.desktop": None}), \
+                    patch.object(sys, "argv", ["AndroidBox", "--self-test", "--report", str(report)]):
+                self.assertEqual(main(), 1)
+            result = json.loads(report.read_text(encoding="utf-8"))
+            self.assertFalse(result["passed"])
+            self.assertEqual(result["stage"], "dependency")
+            self.assertIn("dependency unavailable", result["errors"][0])

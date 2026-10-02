@@ -12,7 +12,8 @@ class FrozenVerifierTests(unittest.TestCase):
     def run_report(self, result, screenshot=True, require_runtime=False):
         def child(command, **kwargs):
             self.assertEqual(kwargs["timeout"], 90)
-            self.assertTrue(kwargs["check"])
+            self.assertTrue(kwargs["capture_output"])
+            self.assertTrue(kwargs["text"])
             self.assertNotIn("PYTHONPATH", kwargs["env"])
             self.assertEqual("--require-runtime" in command, require_runtime)
             report = Path(command[command.index("--report") + 1])
@@ -20,11 +21,26 @@ class FrozenVerifierTests(unittest.TestCase):
             report.write_text(json.dumps(result), encoding="utf-8")
             if screenshot:
                 Path(command[command.index("--screenshot") + 1]).write_bytes(b"image")
+            return subprocess.CompletedProcess(command, 0, "self-test output", "")
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "AndroidBox"
             executable.touch()
             with patch("scripts.verify_frozen.subprocess.run", side_effect=child):
                 verify(executable, require_runtime=require_runtime)
+
+    def test_nonzero_exit_carries_the_child_output(self):
+        def child(command, **kwargs):
+            report = Path(command[command.index("--report") + 1])
+            report.write_text(json.dumps({"passed": False, "errors": ["probe failed"]}), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 1, "", "boom")
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "AndroidBox"
+            executable.touch()
+            with patch("scripts.verify_frozen.subprocess.run", side_effect=child):
+                with self.assertRaises(subprocess.CalledProcessError) as raised:
+                    verify(executable)
+        self.assertIn("boom", raised.exception.stderr)
+        self.assertEqual(raised.exception.returncode, 1)
 
     def test_required_runtime_must_be_reported(self):
         with self.assertRaisesRegex(ValueError, "runtime"):
