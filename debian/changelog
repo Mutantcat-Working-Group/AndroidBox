@@ -1,4 +1,13 @@
-androidbox (1.0.20261005) unstable; urgency=medium
+androidbox (1.0.20261006) unstable; urgency=medium
+
+  * Find the bundled Android system image on a signed Windows installer again.
+    The image disk is compressed onto the tail of the installer and NSIS
+    copies that tail beside the runtime at install time, but signing appends
+    the certificate table behind it, so the client no longer saw the disk it
+    had been given and every Windows install reported an unreadable package.
+    The trailer is now located by scanning the tail of the file and confirmed
+    against the archive it claims, and the CI verifies the installed copy
+    rather than only the build directory.
 
   * Stream the host webcam into the Android camera app again on macOS. Qt's
     FFmpeg media backend only pushes frames to the video sink while the

@@ -59,6 +59,41 @@ class ImageStoreTests(unittest.TestCase):
         self.assertIsNone(imagesstore.locate(self.installer))
         self.assertGreater(len(damaged), len(original))
 
+    def sign(self, size=8192):
+        """Append what a signature writes behind the trailer."""
+        with self.installer.open("ab") as stream:
+            stream.write(b"\x00\x02\x00\x00WIN_CERTIFICATE" + bytes(range(256)) * (size // 256))
+
+    def test_a_signature_written_behind_the_disk_does_not_hide_it(self):
+        before = self.attached()
+        self.sign()
+        self.assertEqual(imagesstore.locate(self.installer), before)
+
+    def test_the_disk_still_round_trips_after_a_signature(self):
+        self.attached()
+        self.sign()
+        target = self.root / "expanded.raw"
+        self.assertEqual(imagesstore.extract(self.installer, target).read_bytes(), self.raw.read_bytes())
+
+    def test_a_signature_larger_than_expected_still_leaves_the_disk_reachable(self):
+        self.attached()
+        self.sign(imagesstore.TAIL_WINDOW // 2)
+        self.assertIsNotNone(imagesstore.locate(self.installer))
+
+    def test_a_broken_trailer_behind_the_disk_does_not_block_it(self):
+        before = self.attached()
+        with self.installer.open("ab") as stream:
+            stream.write(imagesstore.TRAILER.pack(imagesstore.MAGIC, 0, 0))
+        self.assertEqual(imagesstore.locate(self.installer), before)
+
+    def test_a_trailer_outside_the_tail_window_carries_no_disk(self):
+        far = self.root / "far.exe"
+        far.write_bytes(b"MZ" + b"\x00" * 32)
+        imagesstore.append(far, self.raw)
+        with far.open("ab") as stream:
+            stream.write(b"\x00" * imagesstore.TAIL_WINDOW)
+        self.assertIsNone(imagesstore.locate(far))
+
     def test_a_length_that_overruns_the_file_carries_no_disk(self):
         imagesstore.append(self.installer, self.raw)
         size = self.installer.stat().st_size

@@ -7,6 +7,9 @@ behind it: an LZMA-compressed copy followed by a small trailer. NSIS locates
 its own data by scanning forward from the start of the file and stops at its
 CRC, so anything appended after that is invisible to it - the client
 materializes the disk on first boot instead.
+Signing happens after the disk is attached, so a certificate table lands behind
+the trailer. The reader therefore searches the tail of the file rather than
+trusting its final bytes.
 """
 
 import lzma
@@ -18,6 +21,20 @@ import struct
 MAGIC = b"ANDBOX01"
 TRAILER = struct.Struct("<8sQQ")
 CHUNK = 1 << 20
+XZ_MAGIC = b"\xfd7zXZ\x00"
+# Signing the installer appends the certificate table after the attached disk,
+# so the trailer is no longer the end of the file. Everything a real signature
+# writes past the disk is a few kilobytes; this window leaves ample room.
+TAIL_WINDOW = 4 << 20
+
+
+def _archive_header(installer, offset, length):
+    """Confirm the claimed range really starts an XZ stream."""
+    if offset < 0 or length < len(XZ_MAGIC):
+        return False
+    with installer.open("rb") as stream:
+        stream.seek(offset)
+        return stream.read(len(XZ_MAGIC)) == XZ_MAGIC
 
 
 def append(installer, raw):
@@ -53,11 +70,21 @@ def locate(installer):
     if size < TRAILER.size:
         return None
     with installer.open("rb") as stream:
-        stream.seek(size - TRAILER.size)
-        magic, length, raw_size = TRAILER.unpack(stream.read(TRAILER.size))
-    if magic != MAGIC or length <= 0 or raw_size <= 0 or TRAILER.size + length > size:
-        return None
-    return size - TRAILER.size - length, length, raw_size
+        window = min(TAIL_WINDOW, size)
+        stream.seek(size - window)
+        tail = stream.read(window)
+    # Scan backwards through the tail so the trailer nearest the end of the file
+    # wins: a signature written behind the disk must not hide the disk itself.
+    start = size - window
+    position = tail.rfind(MAGIC, 0, len(tail) - TRAILER.size + len(MAGIC))
+    while position != -1:
+        magic, length, raw_size = TRAILER.unpack(tail[position:position + TRAILER.size])
+        if length > 0 and raw_size > 0 and TRAILER.size + length <= size:
+            offset = start + position - length
+            if _archive_header(installer, offset, length):
+                return offset, length, raw_size
+        position = tail.rfind(MAGIC, 0, position)
+    return None
 
 
 def extract(installer, target, progress=None):

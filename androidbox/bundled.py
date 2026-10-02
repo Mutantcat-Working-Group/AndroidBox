@@ -167,7 +167,9 @@ def verify_images_ready():
         if package.is_file():
             located = imagesstore.locate(package)
             if located is None:
-                raise ValueError(f"Bundled Android image package is unreadable: {package}")
+                size = package.stat().st_size
+                raise ValueError(f"Bundled image package has no readable disk trailer: "
+                                 f"{package} ({size} bytes)")
             _, _, raw_size = located
             if raw_size < MINIMUM_IMAGE_BYTES:
                 raise ValueError(f"Bundled Android image package is truncated: {package}")

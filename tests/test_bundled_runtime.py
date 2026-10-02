@@ -180,7 +180,7 @@ class BundledRuntimeTests(unittest.TestCase):
         directory = self.root / "runtime/images" / arch
         directory.mkdir(parents=True)
         (directory / bundled.IMAGES_PACKAGE).write_bytes(b"ANDBOX01" + b"\x00" * 64)
-        with self.assertRaisesRegex(ValueError, "unreadable"):
+        with self.assertRaisesRegex(ValueError, "no readable disk trailer"):
             bundled.verify_images_ready()
         # Reading the trailer must never leave a partial disk behind.
         self.assertFalse((directory / bundled.IMAGES_DISK).exists())

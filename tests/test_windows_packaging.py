@@ -144,6 +144,22 @@ class NsisImagePackageTests(unittest.TestCase):
         imagesstore.extract(self.target, restored)
         self.assertEqual(restored.read_bytes(), self.raw.read_bytes())
 
+    def test_a_signed_installer_still_carries_the_disk_where_it_was_attached(self):
+        # The installer is signed after the disk is attached, so the certificate
+        # table lands behind the trailer. The copy NSIS installs must still open.
+        self.compile()
+        installer_bytes = self.target.stat().st_size
+        imagesstore.append(self.target, self.raw)
+        with self.target.open("ab") as stream:
+            stream.write(b"\x00\x02\x00\x00WIN_CERTIFICATE" + bytes(range(256)) * 32)
+        offset, length, raw_size = imagesstore.locate(self.target)
+        self.assertEqual(offset, installer_bytes)
+        self.assertEqual(raw_size, self.raw.stat().st_size)
+        self.assertLess(length, raw_size)
+        restored = self.root / "signed-restored.raw"
+        imagesstore.extract(self.target, restored)
+        self.assertEqual(restored.read_bytes(), self.raw.read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()
