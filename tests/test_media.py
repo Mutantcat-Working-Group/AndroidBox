@@ -199,11 +199,12 @@ class CameraStreamTests(unittest.TestCase):
                 importlib.reload(camera)
 
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
-    def test_frames_flow_through_a_capture_session(self):
-        # QCamera carries no video sink of its own, so the frames have to
-        # travel through the capture session that owns both camera and sink.
-        # A dormant recorder rides along because the FFmpeg media backend
-        # only pumps frames into the sink while one is attached.
+    def test_frames_flow_through_a_capture_session_once_the_bridge_answers(self):
+        # The webcam stays switched off until the guest bridge greets the
+        # host, and QCamera carries no video sink of its own, so the frames
+        # have to travel through the capture session that owns both camera
+        # and sink. A dormant recorder rides along because the FFmpeg media
+        # backend only pumps frames into the sink while one is attached.
         streamer = camera.CameraStreamer(7101)
         device = type("Device", (), {"isNull": staticmethod(lambda: False),
                                      "description": staticmethod(lambda: "Test Camera")})()
@@ -213,15 +214,17 @@ class CameraStreamTests(unittest.TestCase):
                 patch.object(camera, "QCamera", mock_camera), \
                 patch.object(camera, "QMediaCaptureSession", MagicMock()), \
                 patch.object(camera, "QMediaRecorder", mock_recorder), \
-                patch.object(camera, "QVideoSink", MagicMock()), \
-                patch.object(streamer, "_request_camera_permission", return_value=True):
-            self.assertTrue(streamer.start())
+                patch.object(camera, "QVideoSink", MagicMock()):
+            streamer._watch_guest(device)
             self.assertTrue(streamer.running)
+            self.assertIsNone(streamer.camera)  # the webcam waits for the bridge
+            streamer._bridge_answered(f"Camera connected to the guest: {streamer.device}")
             session = camera.QMediaCaptureSession.return_value
             session.setCamera.assert_called_once_with(mock_camera.return_value)
             self.assertIs(session.setVideoSink.call_args.args[0], camera.QVideoSink.return_value)
             session.setRecorder.assert_called_once_with(mock_recorder.return_value)
             mock_camera.return_value.start.assert_called_once()
+            streamer._write_frame(b"\xff\xd8\xff\xd9")
             streamer.stop()
             mock_camera.return_value.stop.assert_called_once()
             mock_recorder.return_value.deleteLater.assert_called_once()
@@ -249,32 +252,198 @@ class CameraStreamTests(unittest.TestCase):
 
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
     def test_camera_reconnect_budget_is_bounded(self):
-        streamer = camera.CameraStreamer(7101)
-        streamer.camera = MagicMock()
+        # QEMU answers a forwarded port before the guest bridge listens, so a
+        # guest that is still booting counts as a wait, not as a failure: the
+        # host webcam stays off and no budget is spent until a bridge answers.
+        streamer = camera.CameraStreamer(0)
         streamer.device = "Test Camera"
-        streamer._connected()
         reports = []
         streamer.status.connect(reports.append)
+        streamer._device = MagicMock()
+        # A mock socket keeps the reconnect bookkeeping free of the timing a
+        # real connect to an unreachable port would add.
+        streamer.socket = MagicMock()
         reconnects = []
         with patch.object(camera.QTimer, "singleShot",
-                          side_effect=lambda delay, callback: reconnects.append((delay, callback))):
+                          side_effect=lambda delay, callback: reconnects.append(callback)):
+            for _ in range(30):
+                streamer._disconnected()
+                reconnects.pop()()
+            self.assertEqual(len(reconnects), 0)
+            self.assertEqual(reports, [])
+            self.assertTrue(streamer.running)  # still waiting, webcam untouched
+            # once a bridge has answered, its drops finally spend the budget
+            streamer.link.opened(camera.time.monotonic())
+            streamer.link.greeted()
             for _ in range(camera.MAX_CAMERA_RECONNECTS):
                 streamer._disconnected()
-            self.assertEqual(len(reconnects), camera.MAX_CAMERA_RECONNECTS)
+                self.assertTrue(reconnects)
+                reconnects.pop()()  # the host dials the bridge again...
+                streamer.link.greeted()  # ...and the bridge answers again
+            self.assertEqual(len(reports), camera.MAX_CAMERA_RECONNECTS)
+            self.assertIn("reconnecting (1 of 5)", reports[0])
             streamer._disconnected()
-        self.assertEqual(len(reconnects), camera.MAX_CAMERA_RECONNECTS)
         self.assertFalse(streamer.running)
         self.assertIn("stopped responding", reports[-1])
 
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
-    def test_camera_reconnect_budget_resets_after_a_stable_connection(self):
+    def test_the_webcam_waits_for_the_guest_bridge(self):
+        streamer = camera.CameraStreamer(0)
+        reports = []
+        streamer.status.connect(reports.append)
+        device = type("Device", (), {"isNull": staticmethod(lambda: False),
+                                     "description": staticmethod(lambda: "Test Camera")})()
+        with patch("sys.platform", "linux"), \
+                patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
+                patch.object(camera, "QCamera", MagicMock()), \
+                patch.object(camera, "QMediaCaptureSession", MagicMock()), \
+                patch.object(camera, "QMediaRecorder", MagicMock()), \
+                patch.object(camera, "QVideoSink", MagicMock()):
+            self.assertTrue(streamer.start())
+            self.assertTrue(streamer.running)
+            self.assertIsNone(streamer.camera)  # nothing on the guest side yet
+            self.assertIn("Waiting for the guest camera bridge", reports[0])
+            streamer._bridge_answered("Camera connected to the guest: Test Camera")
+            self.assertIsNotNone(streamer.camera)  # now the webcam comes up
+            streamer.stop()
+        self.assertIsNone(streamer.camera)
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_a_partial_greeting_keeps_the_webcam_waiting(self):
+        streamer = camera.CameraStreamer(0)
+        streamer._device = MagicMock()
+        streamer.device = "Test Camera"
+        reported = []
+        streamer._bridge_answered = lambda message: reported.append(message)
+        streamer.socket = MagicMock()
+        streamer.socket.read.return_value = camera.CAMERA_GREETING[:12]
+        streamer._read_greeting()
+        self.assertEqual(reported, [])
+        self.assertEqual(streamer._greeting_buffer, camera.CAMERA_GREETING[:12])
+        streamer.socket.read.return_value = camera.CAMERA_GREETING[12:]
+        streamer._read_greeting()
+        self.assertEqual(reported, ["Camera connected to the guest: Test Camera"])
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_an_old_guest_that_never_greets_is_streamed_to_anyway(self):
+        streamer = camera.CameraStreamer(0)
+        streamer._device = MagicMock()
+        streamer.device = "Test Camera"
+        reported = []
+        streamer._bridge_answered = lambda message: reported.append(message)
+        streamer.socket = MagicMock()
+        streamer.socket.read.return_value = b"something else entirely"
+        streamer._read_greeting()
+        self.assertEqual(reported, [None])
+        # A bridge that never speaks at all is streamed to when the grace runs out.
+        silent = camera.CameraStreamer(0)
+        silent._device = MagicMock()
+        silent.device = "Test Camera"
+        silent._bridge_answered = lambda message: reported.append(message)
+        silent._greeting_timed_out()
+        self.assertIn(camera.CAMERA_GREETING_FALLBACK, reported)
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_the_preview_url_and_hal_note_name_where_the_picture_lands(self):
+        self.assertEqual(camera.CAMERA_PREVIEW_URL, "http://192.168.240.1:7101/")
+        self.assertIn(camera.CAMERA_PREVIEW_URL, camera.GUEST_CAMERA_HAL_MISSING)
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_the_macos_permission_flow_starts_the_webcam_when_granted(self):
         streamer = camera.CameraStreamer(7101)
+        device = type("Device", (), {"isNull": staticmethod(lambda: False),
+                                     "description": staticmethod(lambda: "Test Camera")})()
+        application = MagicMock()
+        application.checkPermission.side_effect = [
+            camera.Qt.PermissionStatus.Undetermined,
+            camera.Qt.PermissionStatus.Granted,
+        ]
+        application.requestPermission.side_effect = (
+            lambda permission, context, callback: callback(permission))
+        with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
+                patch.object(camera.QCoreApplication, "instance", return_value=application), \
+                patch.object(camera, "QCamera", MagicMock()), \
+                patch.object(camera, "QMediaCaptureSession", MagicMock()), \
+                patch.object(camera, "QVideoSink", MagicMock()), \
+                patch("sys.platform", "darwin"):
+            self.assertTrue(streamer.start())
+            self.assertTrue(streamer.running)
+            application.requestPermission.assert_called_once()
+            self.assertIsNone(streamer.camera)  # the guest has not answered yet
+            streamer._bridge_answered("Camera connected to the guest: Test Camera")
+            self.assertIsNotNone(streamer.camera)
+        camera.QCamera.return_value.start.assert_called_once()
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_a_stopped_streamer_ignores_a_late_close(self):
+        streamer = camera.CameraStreamer(7101)
+        streamer._device = MagicMock()
+        streamer.stop()
+        streamer._disconnected()
+        streamer._socket_error(camera.QAbstractSocket.RemoteHostClosedError)
+        self.assertFalse(streamer.running)
+        self.assertEqual(streamer.link.open, False)
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_frames_cross_to_the_socket_thread_as_bytes(self):
+        streamer = camera.CameraStreamer(7101)
+        streamer._device = MagicMock()
+        streamer.device = "Test Camera"
+        delivered = []
+        streamer.frame_ready.connect(delivered.append)
+        image = QImage(320, 240, QImage.Format.Format_RGB32)
+        image.fill(0xFF336699)
+        frame = type("Frame", (), {"toImage": staticmethod(lambda: image)})()
         streamer.camera = MagicMock()
-        streamer._reconnect_attempts = camera.MAX_CAMERA_RECONNECTS
-        streamer._connected_at = camera.time.monotonic() - camera.CAMERA_STABLE_CONNECTION_SECONDS - 1
+        streamer.send_frame(frame)
+        self.assertEqual(len(delivered), 1)
+        self.assertEqual(delivered[0][:2], b"\xff\xd8")
+        streamer.send_frame(frame)  # the rate limiter drops the second one
+        self.assertEqual(len(delivered), 1)
+
+    def test_a_guest_that_never_answers_spends_no_budget(self):
+        link = camera.GuestLink()
+        now = camera.time.monotonic()
+        for _ in range(camera.MAX_CAMERA_RECONNECTS * 4):
+            link.opened(now)
+            message, keep = link.closed(now)
+            self.assertIsNone(message)
+            self.assertTrue(keep)
+        self.assertEqual(link.attempts, 0)
+
+    def test_a_double_close_is_one_drop(self):
+        link = camera.GuestLink()
+        now = camera.time.monotonic()
+        link.opened(now)
+        link.greeted()
+        message, keep = link.closed(now)
+        self.assertIn("reconnecting (1 of 5)", message)
+        message, keep = link.closed(now)  # the socket stack reports two drops
+        self.assertIsNone(message)
+        self.assertTrue(keep)
+        self.assertEqual(link.attempts, 1)
+
+    def test_a_link_that_was_never_opened_has_nothing_to_report(self):
+        link = camera.GuestLink()
+        message, keep = link.closed(camera.time.monotonic())
+        self.assertIsNone(message)
+        self.assertTrue(keep)
+        self.assertEqual(link.attempts, 0)
+
+    def test_the_bridge_waits_for_the_host_silence_it_tolerates(self):
+        self.assertEqual(camera.CAMERA_GREETING, b"ANDROIDBOX-CAMERA-1\n")
+        self.assertGreaterEqual(camera.CAMERA_GREETING_GRACE, 60.0)
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_camera_reconnect_budget_resets_after_a_stable_connection(self):
+        streamer = camera.CameraStreamer(0)
+        streamer._device = MagicMock()
+        link = streamer.link
+        link.opened(camera.time.monotonic() - camera.CAMERA_STABLE_CONNECTION_SECONDS - 1)
+        link.greeted()
         with patch.object(camera.QTimer, "singleShot"):
             streamer._disconnected()
-        self.assertEqual(streamer._reconnect_attempts, 1)
+        self.assertEqual(link.attempts, 1)
 
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
     def test_macos_permission_denied_reports_without_starting_camera(self):
@@ -296,8 +465,8 @@ class CameraStreamTests(unittest.TestCase):
         mock_camera.assert_not_called()
 
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
-    def test_macos_permission_request_starts_camera_when_granted(self):
-        streamer = camera.CameraStreamer(7101)
+    def test_the_macos_permission_flow_starts_the_webcam_when_granted(self):
+        streamer = camera.CameraStreamer(0)
         device = type("Device", (), {"isNull": staticmethod(lambda: False),
                                      "description": staticmethod(lambda: "Test Camera")})()
         application = MagicMock()
@@ -307,17 +476,16 @@ class CameraStreamTests(unittest.TestCase):
         ]
         application.requestPermission.side_effect = (
             lambda permission, context, callback: callback(permission))
-        mock_camera = MagicMock()
         with patch.object(camera.QMediaDevices, "defaultVideoInput", staticmethod(lambda: device)), \
                 patch.object(camera.QCoreApplication, "instance", return_value=application), \
-                patch.object(camera, "QCamera", mock_camera), \
-                patch.object(camera, "QMediaCaptureSession", MagicMock()), \
-                patch.object(camera, "QVideoSink", MagicMock()), \
                 patch("sys.platform", "darwin"):
             self.assertTrue(streamer.start())
         self.assertTrue(streamer.running)
-        mock_camera.return_value.start.assert_called_once()
         application.requestPermission.assert_called_once()
+        # A granted permission only starts watching the guest: the physical
+        # webcam comes up once the bridge answers, never for a guest that is
+        # still booting.
+        self.assertIsNone(streamer.camera)
 
 
 class GuestAudioReportTests(unittest.TestCase):

@@ -13,7 +13,7 @@
 - **Bundled System Images**: A complete Android image set (`system` + `vendor`) is packaged per guest architecture on the read-only `androidbox-img` disk, so first boot no longer reaches out to the Waydroid OTA channel.
 - **APK Installation**: Install apps through the authorized ADB, preferring the ADB bundled in the installer.
 - **Out of the Box**: On first start the guest architecture, CPU, memory and disk path are prefilled from the host, so the example disk can be prepared and started without a command line.
-- **Sound and Camera**: An emulated sound card and a V4L2 camera are attached by default, so Android apps, media playback and recording use the host audio devices while the camera app sees the host webcam; hosts without a webcam get a test pattern instead.
+- **Sound and Camera**: An emulated sound card and a V4L2 camera are attached by default, so Android apps, media playback and recording use the host audio devices, while the host webcam picture reaches a V4L2 loopback device in the Ubuntu support layer and can be watched live at http://192.168.240.1:7101/ in a guest browser; hosts without a webcam get a test pattern instead.
 - **Sleep Watchdog**: While running it blocks host lid-close sleep and idle sleep, and restarts the guest automatically if it is interrupted by the host, up to 5 times.
 - **Unified App Identity**: The product name is AndroidBox and the application ID is `org.mutantcat.androidbox`.
 - **Publisher** Mutantcat Working Group (mutantcat.org) · GitHub: https://github.com/Mutantcat-Working-Group
@@ -56,8 +56,9 @@ Core value:
 - Settings offers three switches, **Audio output**, **Microphone** and **Camera**, all automatic by default.
 - With sound on, QEMU attaches an Intel HDA card and the guest Ubuntu routes Android audio through PulseAudio to the host speakers, while the microphone feeds the host input device into Android recording, calls and voice apps.
 - When the host sound device is busy or QEMU has no audio backend, the client degrades step by step (drop the microphone first, then all sound) and the guest still boots.
-- With the camera on, the client encodes the default host webcam as MJPEG and pushes it through the QEMU port mapping into the guest camera bridge, which writes it to a V4L2 loopback device for the Android camera app at 15 frames per second and 640 pixels on the longest side.
-- When the host has no webcam, or it is already in use, the guest falls back to a test pattern so the camera app still opens. Setting any of the three to `off` disables that device completely.
+- With the camera on, the client encodes the default host webcam as MJPEG and pushes it through the QEMU port mapping into the guest camera bridge, which writes it to a V4L2 loopback device at 15 frames per second and 640 pixels on the longest side.
+- The bundled Android image ships no camera HAL, so Android camera apps enumerate no device. The picture reaches the V4L2 loopback device in the Ubuntu support layer, and a guest browser watching http://192.168.240.1:7101/ shows it live.
+- When the host has no webcam, or it is already in use, the preview falls back to a test pattern. Setting any of the three to `off` disables that device completely.
 - On macOS the first camera or microphone use asks for system permission: allow AndroidBox in System Settings > Privacy & Security.
 
 #### Sleep Watchdog
@@ -74,7 +75,7 @@ Core value:
 
 ### 3. Install and Download
 
-Current version is `1.0.20261006`. Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch.
+Current version is `1.0.20261007`. Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch.
 
 Download the installer for your platform from [Releases](https://github.com/Mutantcat-Working-Group/AndroidBox/releases). Double-click to use it; every artifact has passed the CI installation self-check.
 
@@ -97,7 +98,7 @@ Notes:
 
 On first start, click **Prepare example guest disk** to prepare an Ubuntu 24.04 minimal guest disk: it downloads the pinned image, verifies the official SHA256, produces a QCOW2 disk the client recognizes automatically, and generates a NoCloud first-boot seed next to the disk. When the official source is unreachable it falls back to domestic mirrors, and **Use a local image** lets you pick an already downloaded image. After boot the cloud init logs in automatically, sets a known password and installs the Android container in one pass, instead of stopping at `ubuntu login:`.
 
-Pushing a `v*` version tag (for example `v1.0.20261006`, which must match the source version) makes GitHub Actions build all five installers and publish the Release; manual workflow runs only produce CI artifacts and never publish a version. An already published Release is not overwritten by repeat runs.
+Pushing a `v*` version tag (for example `v1.0.20261007`, which must match the source version) makes GitHub Actions build all five installers and publish the Release; manual workflow runs only produce CI artifacts and never publish a version. An already published Release is not overwritten by repeat runs.
 
 ### 4. Quick Start
 
@@ -124,7 +125,7 @@ When downloading fails, preparation tries the official source and two domestic m
 - [X] Ubuntu 24.04 example guest disk download, verification and automatic recognition, with NoCloud seed auto-login.
 - [X] Prefill defaults from host resources on first start, so it is usable without a command line.
 - [X] Host sleep watchdog and bounded automatic restart on abnormal guest exit.
-- [X] Guest sound output, microphone input and host webcam frames reaching the Android camera app.
+- [X] Guest sound output, microphone input and host webcam frames reaching the guest, watched live through the support-layer preview page.
 - [X] The full native CI packaging, self-check and tag-triggered Release flow for five target combinations.
 - [ ] Real hardware acceleration and full Android guest compatibility verification on each platform.
 - [ ] Android pointer positioning, SystemUI startup anomalies and shared storage fixes.
@@ -218,11 +219,11 @@ The bundled Android images are produced by `scripts/build_system_images.py`. Bec
 
 | Platform | Current Version Artifact |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20261006-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20261006-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20261006-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20261006-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20261006-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20261007-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20261007-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20261007-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20261007-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20261007-Linux-aarch64.AppImage` |
 
 Windows on ARM devices (Snapdragon X Elite and similar) have no native ARM64 installer: Qt for Python publishes no official Windows ARM64 binaries, so a natively built client cannot start. Use the x86_64 installer on those machines and let the Windows 11 ARM64 compatibility layer run it; if x64 emulation is unavailable (some virtual machines or stripped-down images), run AndroidBox on another machine on the same network and reach it through noVNC.
 

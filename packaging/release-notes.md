@@ -1,3 +1,18 @@
+## AndroidBox 1.0.20261007
+
+The host webcam reaches the guest again. The guest camera bridge asked its
+frame queue for a method the queue never had, so the encoder thread died the
+moment it started and the loopback camera device received nothing while the
+host believed it was streaming. The host now also keeps the webcam switched
+off until the guest bridge answers: QEMU accepts a connection to a forwarded
+port long before anything in the guest listens on it, so a link that opens
+and closes again is a guest that is still booting, not a failing bridge, and
+only a bridge that answered is held to the reconnect budget. The picture is
+served over HTTP on the Ubuntu support layer as well, because the bundled
+Android image provides no camera HAL and no Android camera app can enumerate
+a device: a guest browser watching the preview page sees the webcam live,
+and hosts without a webcam get the test pattern there.
+
 ## AndroidBox 1.0.20261004
 
 The host webcam feeds the Android camera app again on macOS. Qt's FFmpeg
@@ -50,14 +65,16 @@ microphone and then all sound, rather than losing the guest altogether.
 
 The host webcam is encoded as MJPEG on the host, forwarded through a new QEMU
 port mapping and decoded inside the guest by a camera bridge that writes to a
-v4l2loopback device, which the Android camera app reads at 15 frames per second
-and 640 pixels on the longest edge. Hosts without a webcam, or with the webcam
-already in use, fall back to a still test pattern, so the camera app still opens
-instead of failing. The bridge service is only enabled when a loopback camera
-device exists; otherwise the guest keeps the vivid test pattern device as its
-camera. On macOS the first camera or microphone use asks for system permission,
-so Android audio and a live preview need AndroidBox to be allowed under
-Privacy & Security.
+v4l2loopback device at 15 frames per second and 640 pixels on the longest
+edge. The bundled Android image provides no camera HAL, so no Android camera
+app can enumerate a device; the picture is watched in a guest browser on the
+preview page the bridge serves on the support layer. Hosts without a webcam,
+or with the webcam already in use, fall back to a still test pattern there.
+The bridge service is only enabled when a loopback camera device exists;
+otherwise the guest keeps the vivid test pattern device as its camera. On
+macOS the first camera or microphone use asks for system permission, so
+Android audio and a live preview need AndroidBox to be allowed under Privacy
+& Security.
 
 ## AndroidBox 1.0.20260929
 

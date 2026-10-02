@@ -1,3 +1,25 @@
+androidbox (1.0.20261007) unstable; urgency=medium
+
+  * Restore the host webcam feed into the guest. The camera bridge asked its
+    frame queue for a method the queue never had, so the encoder thread died
+    the moment it started and the loopback device received nothing while the
+    host believed it was streaming; the queue now hands out frames the way
+    the encoder asks for them.
+
+  * Keep the webcam off until the guest camera bridge answers. QEMU accepts a
+    connection to a forwarded port long before anything in the guest listens
+    on it, so a link that opens and closes again is a guest that is still
+    booting rather than a failing bridge: the bridge now greets the host the
+    moment it accepts a connection, and only a bridge that answered is held
+    to the reconnect budget.
+
+  * Serve the same picture over HTTP on the Ubuntu support layer, because the
+    bundled Android image provides no camera HAL and no Android camera app
+    can enumerate a device: a guest browser watching the preview page sees
+    the webcam live, and hosts without a webcam get the test pattern there.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Sat, 03 Oct 2026 00:00:00 +0800
+
 androidbox (1.0.20261006) unstable; urgency=medium
 
   * Find the bundled Android system image on a signed Windows installer again.

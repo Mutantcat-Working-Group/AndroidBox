@@ -13,7 +13,7 @@
 - **内置系统镜像**：按客体架构打包整套 Android 镜像（`system` + `vendor`，位于只读 `androidbox-img` 磁盘），首次开机不再访问 Waydroid OTA 渠道。
 - **APK 安装**：通过经过设备授权的 ADB 安装应用，优先使用安装包内置的 ADB。
 - **开箱即用**：首次启动按宿主架构预填客体架构、CPU、内存与磁盘路径，无需命令行即可准备示例盘并启动。
-- **声音与摄像头**：默认挂载模拟声卡与 V4L2 摄像头，安卓应用、媒体播放和录音走宿主机音频设备，宿主机摄像头画面实时推送到安卓相机应用；宿主没有摄像头时相机显示测试图案。
+- **声音与摄像头**：默认挂载模拟声卡与 V4L2 摄像头，安卓应用、媒体播放和录音走宿主机音频设备；宿主机摄像头画面经 Ubuntu 支撑层写入 V4L2 环回设备，并可在客体浏览器打开 http://192.168.240.1:7101/ 实时查看；宿主没有摄像头时显示测试图案。
 - **休眠看门狗**：运行期间阻止宿主机合盖休眠与空闲睡眠，客体被宿主异常中断后自动重启，最多 5 次。
 - **统一应用标识**：软件名称为 AndroidBox，应用 ID 为 `org.mutantcat.androidbox`。
 - **发行方** 由异猫工作群（mutantcat.org）发行，GitHub: https://github.com/Mutantcat-Working-Group
@@ -56,8 +56,9 @@
 - 设置里提供 **Audio output**、**Microphone**、**Camera** 三个开关，默认全部自动开启
 - 开启声音后 QEMU 挂载 Intel HDA 声卡，客体 Ubuntu 通过 PulseAudio 把安卓的声音输出到宿主机音箱，麦克风则把宿主机输入送到安卓的录音、通话与语音应用
 - 宿主机声卡被其他程序占用或 QEMU 缺少音频后端时，客户端会自动降级（先关麦克风、再关全部声音），客体仍然正常启动
-- 开启摄像头后，客户端把宿主机默认摄像头压缩成 MJPEG 并经 QEMU 端口映射送进客体的摄像头桥接服务，写入 V4L2 环回设备供安卓相机应用读取，采集 15 fps、最长边 640
-- 宿主机没有摄像头（或摄像头被占用）时，客体自动显示测试图案，相机应用仍能正常打开；把任一选项改为 `off` 即可完全关闭对应设备
+- 开启摄像头后，客户端把宿主机默认摄像头压缩成 MJPEG 并经 QEMU 端口映射送进客体的摄像头桥接服务，写入 V4L2 环回设备，采集 15 fps、最长边 640
+- 内置安卓镜像未提供相机 HAL，安卓相机应用枚举不到设备；画面经 Ubuntu 支撑层的 V4L2 环回设备接入，在客体浏览器打开 http://192.168.240.1:7101/ 即可实时查看
+- 宿主机没有摄像头（或摄像头被占用）时，预览自动回退为测试图案；把任一选项改为 `off` 即可完全关闭对应设备
 - macOS 首次启用摄像头或麦克风时系统会请求授权，请在「系统设置 > 隐私与安全性」中允许 AndroidBox
 
 #### 休眠看门狗
@@ -74,7 +75,7 @@
 
 ### 三、安装与下载
 
-当前版本 `1.0.20261006`。安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。
+当前版本 `1.0.20261007`。安装包内置 Python、Qt、noVNC、QEMU、ADB 与整套 Android 系统镜像；Windows 安装器把镜像压缩后追加在自身上，首次启动自动展开。
 
 从 [Releases](https://github.com/Mutantcat-Working-Group/AndroidBox/releases) 下载对应平台的安装包，双击即可使用，全部产物已通过 CI 安装自检。
 
@@ -97,7 +98,7 @@
 
 首次启动点击 **Prepare example guest disk** 即可准备 Ubuntu 24.04 minimal 客体盘：下载固定版本镜像、校验官方 SHA256，生成客户端可自动识别的 QCOW2 磁盘，并在磁盘旁生成 NoCloud 首次引导种子。官方源不可达时自动回退国内镜像，也可用 **Use a local image** 选择已下载镜像。开机后云端初始化自动登录、设置已知密码并一次性安装 Android 容器，不再停留在 `ubuntu login:`。
 
-推送 `v*` 版本标签（例如 `v1.0.20261006`，标签需与源码版本一致）即由 GitHub Actions 自动构建五个安装包并联编 Release；在 Actions 页面手动运行只产出 CI 制品，不发布版本。已发布的 Release 不会被重复运行覆盖。
+推送 `v*` 版本标签（例如 `v1.0.20261007`，标签需与源码版本一致）即由 GitHub Actions 自动构建五个安装包并联编 Release；在 Actions 页面手动运行只产出 CI 制品，不发布版本。已发布的 Release 不会被重复运行覆盖。
 
 ### 四、快速上手
 
@@ -124,7 +125,7 @@
 - [X] Ubuntu 24.04 示例客体盘下载、校验与自动识别，NoCloud 种子自动登录。
 - [X] 首次启动按宿主资源预填默认参数，无需命令行即可使用。
 - [X] 宿主机休眠看门狗与客体异常退出有界自动重启。
-- [X] 客体声音输出、麦克风输入与宿主机摄像头画面接入安卓相机应用。
+- [X] 客体声音输出、麦克风输入与宿主机摄像头画面接入客体，经支撑层预览页实时查看。
 - [X] 五种目标组合的原生 CI 打包、自检和标签触发 Release 全流程。
 - [ ] 各平台真实硬件加速与完整 Android 客体兼容性验证。
 - [ ] Android 鼠标定位、SystemUI 启动异常及共享存储问题修复。
@@ -218,11 +219,11 @@ macOS 输出 `dist/AndroidBox.app`，Windows/Linux 输出完整 `dist/AndroidBox
 
 | 平台 | 当前版本产物 |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20261006-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20261006-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20261006-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20261006-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20261006-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20261007-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20261007-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20261007-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20261007-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20261007-Linux-aarch64.AppImage` |
 
 Windows on ARM（骁龙 X Elite 等）暂无原生 ARM64 安装包：Qt for Python 未提供 Windows ARM64 的官方二进制，原生构建的客户端无法启动。这类设备请下载 x86_64 安装包，由 Windows 11 的 ARM64 兼容层运行；若 x64 仿真不可用（部分虚拟机或精简系统），可改用同一局域网其他机器配合 noVNC 访问。
 
