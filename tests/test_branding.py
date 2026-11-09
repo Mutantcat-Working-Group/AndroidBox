@@ -113,6 +113,16 @@ class BrandingTests(unittest.TestCase):
         self.assertIn("/etc/systemd/system/androidbox-net-portal.service", provision)
         self.assertIn("androidbox-net-portal.service", provision)
 
+    def test_guest_records_why_android_may_see_no_camera(self):
+        provision = source(ROOT / "guest/provision.sh")
+        # The loopback node is not the Android camera: an app only gets a device
+        # when the vendor image ships a provider this CPU can run, and upstream
+        # builds it 32-bit only. The audit keeps the two cases apart in the log.
+        self.assertIn("audit_camera_hal", provision)
+        self.assertIn("/var/lib/androidbox/camera-hal.txt", provision)
+        self.assertIn("EI_CLASS", provision)
+        self.assertIn("camera\\.provider", provision)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,36 @@
+androidbox (1.0.20261109) unstable; urgency=medium
+
+  * Split the guest state machine out of the Qt window. What the guest is
+    doing - which operation is in flight, when QEMU exited, how a failed
+    start is retried, when the camera bridge is attached - now lives in
+    androidbox/session.py, so it is testable without a window and the shell
+    no longer knows both QEMU and Qt.
+
+  * Show the guest camera picture inside the client. A toolbar button opens
+    a preview window fed by the QEMU-forwarded snapshot endpoint, so the
+    webcam is visible without opening a browser in the guest, which the
+    stock Android image does not have.
+
+  * Tell a missing camera HAL apart from one this guest cannot run. Upstream
+    Waydroid builds its camera provider for the 32-bit ABI on every
+    architecture, so a guest that runs 64-bit code alone - Apple Silicon
+    picks the arm64_only images, because those cores have no AArch32 - can
+    never start it. One ADB probe now answers how many cameras Android sees,
+    which ABIs the image runs and whether a provider is installed at all,
+    and the note explains the case instead of blaming the webcam.
+
+  * Record which case the installed vendor image is in. First boot mounts
+    the read-only vendor image, reads the provider's ELF class and writes
+    /var/lib/androidbox/camera-hal.txt, so a bug report can tell a missing
+    HAL from an unrunnable one.
+
+  * Add an external camera provider the guest can actually run. The provider
+    is a stable AIDL HAL compiled against the Android NDK for aarch64, built
+    by guest/camera-hal/build.sh from the checked-in AIDL interfaces and the
+    V4L2 loopback device the support layer already feeds.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Mon, 09 Nov 2026 00:00:00 +0800
+
 androidbox (1.0.20261007) unstable; urgency=medium
 
   * Restore the host webcam feed into the guest. The camera bridge asked its

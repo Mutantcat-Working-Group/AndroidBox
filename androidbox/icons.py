@@ -110,6 +110,21 @@ def _computer(painter, color):
         _stroke(painter, color, path)
 
 
+def _camera(painter, color):
+    body = QPainterPath()
+    body.addRoundedRect(QRectF(3.5, 7.0, 17.0, 12.0), 2.5, 2.5)
+    _stroke(painter, color, body)
+    hump = QPainterPath()
+    hump.moveTo(QPointF(8.5, 7.0))
+    hump.lineTo(QPointF(9.5, 4.8))
+    hump.lineTo(QPointF(14.5, 4.8))
+    hump.lineTo(QPointF(15.5, 7.0))
+    _stroke(painter, color, hump)
+    lens = QPainterPath()
+    lens.addEllipse(QRectF(9.0, 10.0, 6.0, 6.0))
+    _stroke(painter, color, lens)
+
+
 GLYPHS = {
     "play": _play,
     "stop": _stop,
@@ -118,6 +133,7 @@ GLYPHS = {
     "exclamation": _exclamation,
     "fullscreen": _fullscreen,
     "computer": _computer,
+    "camera": _camera,
 }
 
 

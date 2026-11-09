@@ -92,6 +92,10 @@ AUDIO_MODES = ("auto", "off")
 MICROPHONE_MODES = ("auto", "off")
 CAMERA_MODES = ("auto", "off")
 CAMERA_GUEST_PORT = 7100
+# The guest bridge also serves the same picture over HTTP on the port below.
+# Forwarding it lets the desktop client show the preview without a guest
+# browser, which the stock image does not have.
+CAMERA_PREVIEW_PORT = 7101
 # Audio backends each platform offers, best first. QEMU only builds a subset of
 # drivers per host, so the list is filtered against what QEMU reports.
 AUDIO_DRIVERS = {"Darwin": ("coreaudio",), "Windows": ("dsound", "sdl", "pa"),
@@ -350,7 +354,7 @@ def probe(config):
 
 
 def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_port, adb_port=None,
-                  camera_port=None, audio_driver=None):
+                  camera_port=None, preview_port=None, audio_driver=None):
     config.validate()
     if not 5900 <= vnc_port <= 65535:
         raise ValueError("VNC port must be at least 5900")
@@ -368,6 +372,8 @@ def build_command(config, binary, accelerator, vnc_port, qmp_port, websocket_por
         forwards += f",hostfwd=tcp:127.0.0.1:{adb_port}-:5555"
     if camera_port:
         forwards += f",hostfwd=tcp:127.0.0.1:{camera_port}-:{CAMERA_GUEST_PORT}"
+    if preview_port:
+        forwards += f",hostfwd=tcp:127.0.0.1:{preview_port}-:{CAMERA_PREVIEW_PORT}"
     block = {"driver": config.disk_format, "node-name": "os",
              "file": {"driver": "file", "filename": str(Path(config.disk).resolve())}}
     cache = block_cache(config.disk_cache)
@@ -453,6 +459,7 @@ class VirtualMachine:
         self.password = None
         self.adb_port = None
         self.camera_port = None
+        self.preview_port = None
         self.audio_driver = None
         self.audio_settings = None
         self.microphone_denied = False
@@ -464,7 +471,8 @@ class VirtualMachine:
     def start(self, config, binary, accelerator, log_path, audio_driver=None):
         if self.running:
             raise RuntimeError("AndroidBox is already running")
-        (vnc_port, self.qmp_port, self.websocket_port, self.adb_port, self.camera_port) = reserve_ports(5)
+        (vnc_port, self.qmp_port, self.websocket_port, self.adb_port,
+         self.camera_port, self.preview_port) = reserve_ports(6)
         self.password = secrets.token_hex(4)  # VNC authentication uses eight characters.
         log_path = Path(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -472,7 +480,7 @@ class VirtualMachine:
         for index, (settings, driver) in enumerate(attempts):
             command = build_command(settings, binary, accelerator, vnc_port, self.qmp_port,
                                     self.websocket_port, self.adb_port, self.camera_port,
-                                    audio_driver=driver)
+                                    self.preview_port, audio_driver=driver)
             self.log = log_path.open("wb")
             try:
                 self.process = popen(command, stdin=subprocess.DEVNULL, stdout=self.log,

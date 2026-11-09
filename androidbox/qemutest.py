@@ -47,18 +47,18 @@ def main(argv=None):
             finished = True
             passed = error is None
             timer.stop()
-            if window.future:
+            if window.session.future:
                 try:
-                    window.future.result(timeout=150)
+                    window.session.future.result(timeout=150)
                 except Exception as exception:
                     print(exception, file=sys.stderr)
-                window.future = None
+                window.session.future = None
             window.vm.terminate()
             if error:
                 print(error, file=sys.stderr)
                 print(window.log.toPlainText(), file=sys.stderr)
-                if window.log_path.exists():
-                    print(window.log_path.read_text(errors="replace"), file=sys.stderr)
+                if window.session.log_path.exists():
+                    print(window.session.log_path.read_text(errors="replace"), file=sys.stderr)
             window.close()
             app.quit()
 
@@ -92,7 +92,7 @@ def main(argv=None):
             if time.monotonic() - started > 60:
                 finish("Timed out waiting for a nonblank authenticated QEMU framebuffer")
                 return
-            if window.was_running:
+            if window.session.was_running:
                 window.view.page().runJavaScript("""(() => {
                     if (document.title !== 'AndroidBox - Connected') return false;
                     const canvas = document.querySelector('canvas');

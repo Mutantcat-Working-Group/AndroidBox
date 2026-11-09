@@ -68,15 +68,15 @@ class DropTests(unittest.TestCase):
             # The mime data must outlive the event that borrows it.
             mime = files_mime([apk])
             with patch("androidbox.desktop.adb_executable", return_value="adb"), \
-                    patch("androidbox.desktop.transfer_files",
+                    patch("androidbox.session.transfer_files",
                           return_value="Uploaded 1 file(s) to /sdcard/Download") as transfer, \
                     patch.object(window, "report") as report:
                 window.dropEvent(drop(mime))
-                self.assertEqual(window.operation, "upload")
-                window.future.result(timeout=10)
+                self.assertEqual(window.session.operation, "upload")
+                window.session.future.result(timeout=10)
             # No event loop runs here, so the poll timer cannot clear the
             # finished future and closeEvent would block on its modal box.
-            window.future = None
+            window.session.future = None
             self.assertEqual(transfer.call_args.args[0], "adb")
             self.assertEqual(transfer.call_args.args[1], "127.0.0.1:5555")
             self.assertEqual(transfer.call_args.args[2], [str(apk)])
@@ -91,7 +91,7 @@ class DropTests(unittest.TestCase):
             window.vm.process = FakeProcess()
             mime = files_mime([folder])
             window.dropEvent(drop(mime))
-            self.assertIsNone(window.future)
+            self.assertIsNone(window.session.future)
             self.close_window(window)
 
     def test_drop_is_refused_while_the_guest_is_stopped(self):
@@ -103,7 +103,7 @@ class DropTests(unittest.TestCase):
             with patch("androidbox.desktop.QMessageBox.warning") as warning:
                 window.dropEvent(drop(mime))
             self.assertTrue(warning.called)
-            self.assertIsNone(window.future)
+            self.assertIsNone(window.session.future)
             self.close_window(window)
 
     def test_drop_waits_for_the_running_operation(self):
@@ -112,14 +112,14 @@ class DropTests(unittest.TestCase):
             apk.write_bytes(b"apk")
             window = self.make_window(directory)
             window.vm.process = FakeProcess()
-            window.future = Future()
-            window.operation = "stop"
+            window.session.future = Future()
+            window.session.operation = "stop"
             mime = files_mime([apk])
             with patch("androidbox.desktop.QMessageBox.warning") as warning:
                 window.dropEvent(drop(mime))
             self.assertTrue(warning.called)
-            self.assertIsInstance(window.future, Future)
-            window.future = None
+            self.assertIsInstance(window.session.future, Future)
+            window.session.future = None
             self.close_window(window)
 
     def test_drag_enter_accepts_files_but_not_plain_text(self):

@@ -2,7 +2,6 @@
 # GitHub: https://github.com/Mutantcat-Working-Group
 """Qt desktop shell for the QEMU display and the optional Linux-native backend."""
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -10,9 +9,8 @@ import platform
 import shutil
 import subprocess
 import sys
-import time
 
-from PySide6.QtCore import QLockFile, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QLockFile, QSize, Qt, QUrl
 from PySide6.QtGui import QAction, QIcon, QPalette
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -22,23 +20,18 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import APP_ID, APP_NAME, PUBLISHER_LABEL, PUBLISHER_URL, guestdisk, seed
-from .camera import CameraStreamer
-from .adb import install_apk, transfer_files, executable as adb_executable
-from .display import DisplayServer
+from . import APP_ID, APP_NAME, PUBLISHER_LABEL, PUBLISHER_URL
+from .adb import executable as adb_executable
 from .icons import icon
 from .power import PowerSession
+from .preview import CameraPreview
 from .process import external_environment
 from .runtime import (
-    VMConfig, VirtualMachine, audio_driver, default_config, disk_format, executable,
-    load_config, display_quality_level, normalize_arch, probe, save_config,
-    startup_failure_reason, state_directory,
+    VMConfig, default_config, disk_format, executable, load_config,
+    display_quality_level, normalize_arch, save_config, state_directory,
 )
+from .session import GuestSession
 
-
-# The host can lose the guest process when it suspends; give the desktop a
-# bounded budget of automatic restarts before leaving the user in control.
-MAX_GUEST_RESTARTS = 5
 
 
 # One icon size for every toolbar button keeps the row visually even.
@@ -298,9 +291,6 @@ class LocalImageDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    prepare_progress = Signal(int, int)
-    transfer_progress = Signal(str)
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
@@ -308,40 +298,20 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(640, 480)
         self.setAcceptDrops(True)
         self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets/AppIcon.png")))
-        self.vm = VirtualMachine()
-        self.camera = None
-        self.server = None
-        self.pool = ThreadPoolExecutor(max_workers=1)
-        self.future = None
-        self.operation = None
-        self.prepare_arch = None
-        self.was_running = False
         self.native_process = None
-        self.log_offset = 0
-        self.log_path = state_directory() / "qemu.log"
-        self.shutdown_requested = False
-        self.restarts = 0
-        self.recovering = False
-        self.pending_notes = []
+        self.preview = None
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(2000)
         try:
-            self.config = load_config()
+            config = load_config()
         except (ValueError, OSError) as error:
-            self.config = default_config(discover_disk=False)
+            config = default_config(discover_disk=False)
             self.log.appendPlainText(str(error))
-        candidates = {}
-        if self.config.disk:
-            candidates[self.config.disk] = self.config.arch
-        managed = self.managed_disk()
-        if managed.is_file():
-            candidates[str(managed)] = normalize_arch(self.config.arch)
-        for disk, arch in candidates.items():
-            try:
-                seed.ensure_seed(seed.seed_path_for(disk), arch)
-            except (OSError, ValueError) as error:
-                self.log.appendPlainText(f"Could not write the first-boot seed for {disk}: {error}")
+        self.session = GuestSession(self, config=config)
+        self.session.log.connect(self.log.appendPlainText)
+        self.session.message.connect(self.report)
+        self.session.ensure_seeds()
         toolbar = QToolBar("Runtime")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
@@ -352,6 +322,7 @@ class MainWindow(QMainWindow):
             ("start", "play", "Start", False),
             ("stop", "stop", "Shut down", False),
             ("install", "install", "Install APK", False),
+            ("preview", "camera", "Camera preview", False),
         ]
         if sys.platform.startswith("linux"):
             left_buttons.append(("native", "computer", "Linux native", False))
@@ -364,6 +335,7 @@ class MainWindow(QMainWindow):
         self.start_action = actions["start"]
         self.stop_action = actions["stop"]
         self.install_action = actions["install"]
+        self.preview_action = actions["preview"]
         self.settings_action = actions["settings"]
         self.logs_action = actions["logs"]
         self.fullscreen_action = actions["fullscreen"]
@@ -371,6 +343,7 @@ class MainWindow(QMainWindow):
         self.start_action.triggered.connect(self.start_vm)
         self.stop_action.triggered.connect(self.stop_vm)
         self.install_action.triggered.connect(self.install_apk)
+        self.preview_action.triggered.connect(self.show_preview)
         self.settings_action.triggered.connect(self.settings)
         self.logs_action.triggered.connect(lambda: self.log.setVisible(self.logs_action.isChecked()))
         self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
@@ -383,14 +356,14 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         image = QLabel()
         image.setPixmap(self.windowIcon().pixmap(80, 80))
-        image.setAlignment(Qt.AlignCenter)
+        image.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(image)
         self.empty_title = QLabel("AndroidBox")
-        self.empty_title.setAlignment(Qt.AlignCenter)
+        self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_title.setStyleSheet("font-size: 24px; font-weight: 600;")
         layout.addWidget(self.empty_title)
         self.empty_status = QLabel("Stopped")
-        self.empty_status.setAlignment(Qt.AlignCenter)
+        self.empty_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_status)
         self.prepare_button = QPushButton("Prepare example guest disk")
         self.prepare_button.setToolTip(
@@ -412,22 +385,27 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(empty)
         self.view = DisplayView()
         shield_drag_and_drop(self.view)
-        self.view.setContextMenuPolicy(Qt.NoContextMenu)
+        self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.stack.addWidget(self.view)
-        splitter = QSplitter(Qt.Vertical)
+        splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self.stack)
         splitter.addWidget(self.log)
         splitter.setSizes([600, 140])
         self.setCentralWidget(splitter)
         self.log.hide()
         shield_drag_and_drop(self.log)
-        self.prepare_progress.connect(self.on_prepare_progress)
-        self.transfer_progress.connect(self.on_transfer_progress)
+        # The session owns the state machine; the window only renders it.
+        self.session.changed.connect(self.update_actions)
+        self.session.started.connect(self.on_started)
+        self.session.stopped.connect(self.on_stopped)
+        self.session.prepared.connect(self.on_prepared)
+        self.session.failed.connect(self.on_failed)
+        self.session.restarting.connect(self.on_restarting)
+        self.session.prepare_progress.connect(self.on_prepare_progress)
+        self.session.transfer_progress.connect(self.on_transfer_progress)
+        self.session.start_polling()
         self.update_empty_state()
         self.statusBar().showMessage("Stopped")
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.poll)
-        self.timer.start(250)
         self.power = PowerSession()
         held = self.power.acquire()
         if held:
@@ -435,6 +413,18 @@ class MainWindow(QMainWindow):
                 f"The host is kept awake with {held}; a closed lid or a sleeping "
                 "display will not interrupt the running guest")
         self.update_actions()
+
+    @property
+    def config(self):
+        return self.session.config
+
+    @config.setter
+    def config(self, value):
+        self.session.config = value
+
+    @property
+    def vm(self):
+        return self.session.vm
 
     def report(self, message):
         self.log.appendPlainText(message)
@@ -447,7 +437,7 @@ class MainWindow(QMainWindow):
         being squeezed into a single message box label.
         """
         box = QMessageBox(self)
-        box.setIcon(QMessageBox.Warning)
+        box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle(APP_NAME)
         box.setText(summary)
         box.setDetailedText(str(error))
@@ -484,48 +474,46 @@ class MainWindow(QMainWindow):
 
     def upload_files(self, paths):
         """Copy dragged files into the guest and install any APK among them."""
-        if not self.vm.running:
+        if not self.session.vm.running:
             QMessageBox.warning(self, APP_NAME, "Start the guest before uploading files to it.")
             return
-        if self.future is not None:
+        if self.session.busy:
             QMessageBox.warning(self, APP_NAME, "Wait for the current operation to finish before uploading.")
             return
         adb = adb_executable()
         if not adb:
             QMessageBox.warning(self, APP_NAME, "ADB not found. Install Android SDK Platform Tools and add adb to PATH.")
             return
-        target = f"127.0.0.1:{self.vm.adb_port}"
-        self.operation = "upload"
-        self.future = self.pool.submit(transfer_files, adb, target, paths,
-                                       progress=self.transfer_progress.emit)
-        self.report(f"Uploading {len(paths)} file(s) to the guest Download directory")
-        self.update_actions()
+        self.session.upload(paths, adb)
 
     def on_transfer_progress(self, message):
         self.report(message)
 
     def update_actions(self):
-        busy = self.future is not None
-        running = self.vm.running
+        busy = self.session.busy
+        running = self.session.vm.running
         native_running = self.native_process is not None and self.native_process.poll() is None
         self.start_action.setEnabled(not busy and not running and not native_running)
         self.settings_action.setEnabled(not busy and not running)
         self.stop_action.setEnabled(not busy and running)
-        self.install_action.setEnabled(not busy and running and not self.shutdown_requested)
+        self.stop_action.setToolTip("Force stop" if self.session.shutdown_requested else "Shut down")
+        self.install_action.setEnabled(not busy and running and not self.session.shutdown_requested)
+        self.preview_action.setEnabled(running and not self.session.shutdown_requested)
         if self.native_action is not None:
             self.native_action.setEnabled(not busy and not running and not native_running)
         self.update_empty_state()
 
     def managed_disk(self):
-        return guestdisk.managed_disk_path(normalize_arch(self.config.arch))
+        return self.session.managed_disk()
 
     def update_empty_state(self):
         ready = bool(self.config.disk) or self.managed_disk().is_file()
-        self.prepare_button.setVisible(not ready and self.future is None)
-        self.local_button.setVisible(not ready and self.future is None)
+        self.prepare_button.setVisible(not ready and not self.session.busy)
+        self.local_button.setVisible(not ready and not self.session.busy)
         # Only adjust the two idle labels; Starting..., Start failed and the
         # preparation progress texts are event-driven and must survive polling.
-        if self.future is None and not self.vm.running and self.empty_status.text() in ("Stopped", "No guest disk yet"):
+        if not self.session.busy and not self.session.vm.running and \
+                self.empty_status.text() in ("Stopped", "No guest disk yet"):
             self.empty_status.setText("Stopped" if ready else "No guest disk yet")
 
     def prepare_guest_disk(self):
@@ -533,35 +521,17 @@ class MainWindow(QMainWindow):
         directory = state_directory() / "guests"
         self.empty_status.setText("Preparing guest disk...")
         self.report(f"Preparing an example guest disk for {arch} in {directory}")
-
-        def progress(downloaded, total):
-            percent = int(downloaded * 100 / total) if total else 0
-            self.prepare_progress.emit(percent, downloaded)
-
-        def work():
-            return guestdisk.prepare(arch, directory, progress=progress)
-
-        self.prepare_arch = arch
-        self.operation = "prepare"
-        self.future = self.pool.submit(work)
-        self.update_actions()
+        self.session.prepare(arch, directory)
 
     def use_local_image(self):
         dialog = LocalImageDialog(self)
-        if dialog.exec() != QDialog.Accepted or not dialog.image():
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.image():
             return
         arch = normalize_arch(dialog.arch.currentText())
         directory = state_directory() / "guests"
         self.empty_status.setText("Preparing guest disk...")
         self.report(f"Preparing a {arch} guest disk from {dialog.image()}")
-
-        def work():
-            return guestdisk.prepare(arch, directory, local_image=dialog.image())
-
-        self.prepare_arch = arch
-        self.operation = "prepare"
-        self.future = self.pool.submit(work)
-        self.update_actions()
+        self.session.prepare(arch, directory, local_image=dialog.image())
 
     def on_prepare_progress(self, percent, downloaded):
         self.empty_status.setText(f"Preparing guest disk - {percent}%")
@@ -569,19 +539,16 @@ class MainWindow(QMainWindow):
 
     def settings(self):
         dialog = SettingsDialog(self.config, self)
-        if dialog.exec() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             try:
                 config = dialog.config()
                 save_config(config)
-                self.config = config
+                self.session.config = config
                 self.report("Settings saved")
             except (ValueError, OSError) as error:
                 QMessageBox.warning(self, APP_NAME, str(error))
 
     def start_vm(self):
-        if not self.recovering:
-            self.restarts = 0
-        self.recovering = False
         if not self.config.disk:
             path, _ = QFileDialog.getOpenFileName(self, "Select bootable Linux/Android guest disk",
                                                 str(state_directory() / "guests"),
@@ -591,68 +558,21 @@ class MainWindow(QMainWindow):
             try:
                 config = replace(self.config, disk=path, disk_format=disk_format(path))
                 save_config(config)
-                self.config = config
+                self.session.config = config
             except (OSError, ValueError) as error:
                 QMessageBox.warning(self, APP_NAME, str(error))
                 return
-        try:
-            self.config.validate()
-            try:
-                guestdisk.repair_overlay_backing_format(Path(self.config.disk))
-            except OSError as error:
-                raise ValueError(f"Could not repair the guest disk header: {error}") from error
-            self.server = DisplayServer()
-        except (OSError, ValueError) as error:
-            QMessageBox.warning(self, APP_NAME, str(error))
-            return
-        self.log_offset = 0
-        self.shutdown_requested = False
         self.empty_status.setText("Starting...")
-        self.report("Starting QEMU")
-        config = replace(self.config)
-        def start():
-            binary, accelerator = probe(config)
-            driver = ""
-            if config.audio != "off" or config.microphone != "off":
-                # A host without a working sound backend must still boot the guest;
-                # the worker thread only collects the note, never touches a widget.
-                try:
-                    driver = audio_driver(binary)
-                except (OSError, subprocess.SubprocessError) as error:
-                    self.pending_notes.append(f"Host sound is unavailable: {error}")
-            self.vm.start(config, binary, accelerator, self.log_path, audio_driver=driver)
-            try:
-                for _ in range(60):
-                    if not self.vm.running:
-                        raise RuntimeError(startup_failure_reason(self.log_path)
-                                           or "QEMU exited during startup; see the runtime log")
-                    try:
-                        self.vm.connect_display()
-                        return accelerator
-                    except (OSError, ValueError, RuntimeError):
-                        time.sleep(0.25)
-                raise RuntimeError("QEMU management connection timed out")
-            except Exception:
-                self.vm.terminate()
-                raise
-        self.operation = "start"
-        self.future = self.pool.submit(start)
-        self.update_actions()
+        self.session.start()
 
     def stop_vm(self):
-        self.restarts = 0
-        if self.shutdown_requested:
+        if self.session.shutdown_requested:
             answer = QMessageBox.question(self, "Force stop", "Force stop the virtual machine? Unsaved guest data may be lost.")
-            if answer != QMessageBox.Yes:
+            if answer != QMessageBox.StandardButton.Yes:
                 return
-            operation = self.vm.terminate
+            self.session.stop(force=True)
         else:
-            operation = self.vm.shutdown
-        self.operation = "stop"
-        self.future = self.pool.submit(operation)
-        self.shutdown_requested = True
-        self.stop_action.setToolTip("Force stop")
-        self.update_actions()
+            self.session.stop()
 
     def install_apk(self):
         path, _ = QFileDialog.getOpenFileName(self, "Install APK", "", "Android packages (*.apk)")
@@ -662,11 +582,35 @@ class MainWindow(QMainWindow):
         if not adb:
             QMessageBox.warning(self, APP_NAME, "ADB not found. Install Android SDK Platform Tools and add adb to PATH.")
             return
-        target = f"127.0.0.1:{self.vm.adb_port}"
-        self.operation = "install"
-        self.future = self.pool.submit(install_apk, adb, target, path)
-        self.report("Waiting for Android authorization / installing APK")
-        self.update_actions()
+        self.session.install_apk(adb, path)
+
+    def show_preview(self):
+        """Open the in-client view of the guest camera bridge picture."""
+        if not self.session.vm.running:
+            QMessageBox.warning(self, APP_NAME, "Start the guest before previewing its camera.")
+            return
+        port = getattr(self.session.vm, "preview_port", None)
+        if not port:
+            QMessageBox.warning(self, APP_NAME, "This guest was started without a camera preview port.")
+            return
+        if self.preview is None:
+            preview = CameraPreview(port, self)
+            preview.finished.connect(lambda _result=0, preview=preview:
+                                     self._preview_closed(preview))
+            self.preview = preview
+        self.preview.show()
+        self.preview.raise_()
+        self.preview.activateWindow()
+
+    def _preview_closed(self, preview):
+        # A preview that was already replaced by a newer one must not clear it.
+        if self.preview is preview:
+            self.preview = None
+
+    def close_preview(self):
+        if self.preview is not None:
+            preview, self.preview = self.preview, None
+            preview.close()
 
     def native(self):
         binary = shutil.which("androidbox")
@@ -684,145 +628,60 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, APP_NAME, str(error))
 
     def poll(self):
-        if self.log_path.exists():
-            with self.log_path.open("rb") as stream:
-                stream.seek(self.log_offset)
-                content = stream.read(65536)
-                self.log_offset = stream.tell()
-            if content:
-                self.log.appendPlainText(content.decode("utf-8", errors="replace").rstrip())
-        if self.future is not None and self.future.done():
-            future, operation = self.future, self.operation
-            self.future = None
-            try:
-                result = future.result()
-                if operation == "start":
-                    self.was_running = True
-                    quality = display_quality_level(self.config.display_quality)
-                    self.view.setUrl(QUrl(
-                        f"{self.server.url}#port={self.vm.websocket_port}"
-                        f"&password={self.vm.password}&quality={quality}"))
-                    shield_drag_and_drop(self.view)
-                    self.stack.setCurrentIndex(1)
-                    self.report(f"QEMU running | {self.config.arch} | {result.upper()}")
-                    for note in self.pending_notes:
-                        self.report(note)
-                    self.pending_notes.clear()
-                    if self.vm.audio_driver:
-                        self.report(f"Guest sound: {self.vm.describe_audio()}")
-                    if self.config.camera != "off":
-                        self.start_camera()
-                elif operation == "stop":
-                    self.report("Shutdown requested" if self.vm.running else "Stopped")
-                elif operation == "prepare":
-                    disk = Path(result)
-                    try:
-                        config = replace(self.config, disk=str(disk), disk_format=disk_format(disk),
-                                         arch=self.prepare_arch or self.config.arch)
-                        save_config(config)
-                    except (OSError, ValueError) as error:
-                        self.empty_status.setText("Preparation failed")
-                        self.report_error("Could not save the prepared guest disk", error)
-                    else:
-                        self.config = config
-                        self.empty_status.setText("Guest disk ready")
-                        self.report(f"Guest disk ready: {disk}")
-                        self.report("The first boot installs the Android guest and can take several minutes")
-                else:
-                    self.report(result or "Done")
-            except Exception as error:
-                self.report(str(error))
-                if operation == "start":
-                    self.empty_status.setText("Start failed")
-                    self.close_display()
-                elif operation == "prepare":
-                    self.empty_status.setText("Preparation failed")
-                self.report_error("Guest disk preparation failed" if operation == "prepare"
-                                  else "Operation failed", error)
-        if self.was_running and not self.vm.running:
-            self.was_running = False
-            self.vm.close_log()
-            code = self.vm.process.returncode
+        self.session.poll()
+
+    def on_started(self, accelerator):
+        quality = display_quality_level(self.config.display_quality)
+        self.view.setUrl(QUrl(
+            f"{self.session.display_url()}#port={self.vm.websocket_port}"
+            f"&password={self.vm.password}&quality={quality}"))
+        shield_drag_and_drop(self.view)
+        self.stack.setCurrentIndex(1)
+        self.report(f"QEMU running | {self.config.arch} | {accelerator.upper()}")
+
+    def on_stopped(self, code):
+        self.close_display()
+        self.empty_status.setText("Stopped" if code == 0 else f"QEMU exited ({code})")
+        self.report(self.empty_status.text())
+
+    def on_prepared(self, disk):
+        self.empty_status.setText("Guest disk ready")
+
+    def on_failed(self, summary, error, operation):
+        self.report(str(error))
+        if operation == "start":
             self.close_display()
-            self.empty_status.setText("Stopped" if code == 0 else f"QEMU exited ({code})")
-            self.report(self.empty_status.text())
-            self.stop_action.setToolTip("Shut down")
-            # A clean exit is the guest powering itself off: restarting it here
-            # would fight the user shutting Android down from inside the guest.
-            if not self.shutdown_requested and code != 0:
-                self.recover_guest(code)
-        self.update_actions()
+            self.empty_status.setText("Start failed")
+        elif operation == "prepare":
+            self.empty_status.setText("Preparation failed")
+        self.report_error(summary, error)
+
+    def on_restarting(self, attempt, maximum):
+        self.empty_status.setText("Recovering the guest...")
 
     def close_display(self):
+        """Reset the embedded screen; session state and ports are already down."""
         self.view.setUrl(QUrl("about:blank"))
         self.stack.setCurrentIndex(0)
-        if self.server:
-            self.server.close()
-            self.server = None
-        self.stop_camera()
-
-    def start_camera(self):
-        """Point the host webcam at the guest camera bridge."""
-        if self.camera is not None or not self.vm.running:
-            return
-        self.camera = CameraStreamer(self.vm.camera_port, self)
-        signal = getattr(self.camera, "status", None)
-        if signal is not None:
-            signal.connect(self.report)
-        # With ADB reachable the streamer can ask the guest which cameras
-        # Android really sees, instead of claiming a success it cannot verify.
-        probe = getattr(self.camera, "set_guest_probe", None)
-        if probe is not None:
-            probe(adb_executable(), f"127.0.0.1:{self.vm.adb_port}")
-        if not self.camera.start():
-            self.camera = None
-
-    def stop_camera(self):
-        """Release the webcam and drop the stream into the guest."""
-        if self.camera is None:
-            return
-        streamer, self.camera = self.camera, None
-        streamer.stop()
-
-    def recover_guest(self, code):
-        """Start the guest again after an exit the user did not ask for.
-
-        A host that suspends takes the QEMU process with it. The guest disk
-        and the saved settings are unchanged, so retry a bounded number of
-        times before handing control back to the user.
-        """
-        if self.future is not None:
-            return
-        if self.restarts >= MAX_GUEST_RESTARTS:
-            self.report(f"QEMU keeps exiting ({code}); press Start to try again")
-            return
-        self.restarts += 1
-        self.empty_status.setText("Recovering the guest...")
-        self.report(f"QEMU exited unexpectedly ({code}); restarting the guest "
-                    f"({self.restarts} of {MAX_GUEST_RESTARTS})")
-        self.recovering = True
-        self.start_vm()
+        self.close_preview()
 
     def toggle_fullscreen(self):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
     def closeEvent(self, event):
-        if self.future is not None:
+        if self.session.busy:
             QMessageBox.information(self, APP_NAME, "Wait for the current operation to finish before closing.")
             event.ignore()
             return
-        if self.vm.running:
+        if self.session.vm.running:
             answer = QMessageBox.question(self, APP_NAME, "Force stop AndroidBox and close? Shut down first to preserve guest data.")
-            if answer != QMessageBox.Yes:
+            if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-        self.timer.stop()
-        self.vm.terminate()
+        self.session.close()
         self.close_display()
         self.power.release()
-        self.pool.shutdown(wait=True)
         event.accept()
-
 
 def main():
     app = QApplication(sys.argv)

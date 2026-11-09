@@ -167,6 +167,54 @@ fi
 install -m 0644 "$source_dir/guest/greetd.toml" /etc/greetd/config.toml
 
 androidbox init
+
+# The loopback node and the Android camera are two separate questions. The
+# bridge writes the webcam into /dev/video0 whatever the vendor image holds,
+# but an Android camera app only sees a device when the vendor image ships a
+# camera provider the guest CPU can actually run. Upstream builds that
+# provider for the 32-bit ABI on every architecture, so a guest that runs
+# 64-bit code alone - Apple Silicon picks the arm64_only images, because those
+# cores have no AArch32 - can never start it. Record what is installed here so
+# the log and a bug report can tell a missing HAL from an unrunnable one.
+camera_hal_report=/var/lib/androidbox/camera-hal.txt
+audit_camera_hal() {
+    local vendor="$preinstalled_images/vendor.img"
+    local mount_point="/run/androidbox-hal-audit"
+    local provider="" elf_class="" summary
+    if [[ ! -f $vendor ]]; then
+        summary="no vendor image installed"
+    else
+        mkdir -p "$mount_point"
+        if mount -o ro "$vendor" "$mount_point" 2>/dev/null; then
+            provider=$(ls "$mount_point/bin/hw" 2>/dev/null | grep 'camera\.provider' | head -1)
+            if [[ -n $provider ]]; then
+                # ELF byte 5 is EI_CLASS: 1 for 32-bit, 2 for 64-bit.
+                elf_class=$(od -An -tu1 -j4 -N1 "$mount_point/bin/hw/$provider" 2>/dev/null |
+                            tr -d '[:space:]')
+                if [[ $elf_class == 1 ]]; then
+                    summary="$provider is 32-bit"
+                elif [[ $elf_class == 2 ]]; then
+                    summary="$provider is 64-bit"
+                else
+                    summary="$provider has an unreadable ELF header"
+                fi
+            else
+                summary="the vendor image ships no camera provider"
+            fi
+            umount "$mount_point"
+        else
+            summary="the vendor image could not be mounted for the camera audit"
+        fi
+    fi
+    printf 'camera HAL: %s\n' "$summary" > "$camera_hal_report"
+    if [[ $summary == *"no camera provider"* || $summary == "no vendor image installed" ]]; then
+        echo "NOTE: $summary, so Android camera apps enumerate no device; the webcam still reaches the Ubuntu layer, where the client preview and http://192.168.240.1:7101/ show it." >&2
+    elif [[ $summary == *"32-bit"* ]]; then
+        echo "NOTE: $summary, which a 64-bit-only guest cannot run, so Android camera apps enumerate no device; the client preview and http://192.168.240.1:7101/ still show the webcam." >&2
+    fi
+}
+audit_camera_hal || echo "WARNING: the camera HAL audit could not run." >&2
+
 python3 - <<'PY'
 import configparser
 from pathlib import Path

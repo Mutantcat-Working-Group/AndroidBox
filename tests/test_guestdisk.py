@@ -415,9 +415,9 @@ class PrepareFlowTests(unittest.TestCase):
             window = MainWindow()
             window.show()
             self.assertTrue(window.prepare_button.isVisible())
-            with patch("androidbox.desktop.guestdisk.prepare", side_effect=fake_prepare):
+            with patch("androidbox.guestdisk.prepare", side_effect=fake_prepare):
                 window.prepare_guest_disk()
-                window.future.result(timeout=10)
+                window.session.future.result(timeout=10)
                 window.poll()
             self.assertEqual(window.config.disk, str(overlay))
             self.assertEqual(window.config.disk_format, "qcow2")
@@ -465,9 +465,9 @@ class PrepareFlowTests(unittest.TestCase):
                 return overlay
 
             with patch("androidbox.desktop.LocalImageDialog", FakeDialog), \
-                    patch("androidbox.desktop.guestdisk.prepare", side_effect=fake_prepare) as prepare:
+                    patch("androidbox.guestdisk.prepare", side_effect=fake_prepare) as prepare:
                 window.use_local_image()
-                window.future.result(timeout=10)
+                window.session.future.result(timeout=10)
                 window.poll()
             self.assertEqual(prepare.call_args.args[0], "x86_64")
             self.assertEqual(prepare.call_args.kwargs["local_image"], str(local))
@@ -500,10 +500,10 @@ class PrepareFlowTests(unittest.TestCase):
             window = MainWindow()
             window.show()
             with patch("androidbox.desktop.LocalImageDialog", CancelledDialog), \
-                    patch("androidbox.desktop.guestdisk.prepare",
+                    patch("androidbox.guestdisk.prepare",
                           side_effect=AssertionError("must not prepare")):
                 window.use_local_image()
-            self.assertIsNone(window.future)
+            self.assertIsNone(window.session.future)
             self.assertTrue(window.local_button.isVisible())
             window.close()
         self.assertIsNotNone(application)

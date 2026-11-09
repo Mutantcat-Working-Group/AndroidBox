@@ -13,7 +13,7 @@
 - **Bundled System Images**: A complete Android image set (`system` + `vendor`) is packaged per guest architecture on the read-only `androidbox-img` disk, so first boot no longer reaches out to the Waydroid OTA channel.
 - **APK Installation**: Install apps through the authorized ADB, preferring the ADB bundled in the installer.
 - **Out of the Box**: On first start the guest architecture, CPU, memory and disk path are prefilled from the host, so the example disk can be prepared and started without a command line.
-- **Sound and Camera**: An emulated sound card and a V4L2 camera are attached by default, so Android apps, media playback and recording use the host audio devices, while the host webcam picture reaches a V4L2 loopback device in the Ubuntu support layer and can be watched live at http://192.168.240.1:7101/ in a guest browser; hosts without a webcam get a test pattern instead.
+- **Sound and Camera**: An emulated sound card and a V4L2 camera are attached by default, so Android apps, media playback and recording use the host audio devices, while the host webcam picture reaches a V4L2 loopback device in the Ubuntu support layer and can be watched live in the client itself with the Camera preview button (the same picture is also available at http://192.168.240.1:7101/ in a guest browser); hosts without a webcam get a test pattern instead. Android camera apps themselves only get a device where the guest can run the upstream 32-bit camera HAL, which an arm64_only guest such as Apple Silicon cannot.
 - **Sleep Watchdog**: While running it blocks host lid-close sleep and idle sleep, and restarts the guest automatically if it is interrupted by the host, up to 5 times.
 - **Unified App Identity**: The product name is AndroidBox and the application ID is `org.mutantcat.androidbox`.
 - **Publisher** Mutantcat Working Group (mutantcat.org) · GitHub: https://github.com/Mutantcat-Working-Group
@@ -32,7 +32,7 @@ Core value:
 #### Windowed Interface
 
 - Embedded noVNC display with fullscreen switching.
-- The toolbar is one icon-only row: Start, Shut down and Install APK on the left, Settings, Logs and Full screen on the right, all icons the same size, with no divider in between.
+- The toolbar is one icon-only row: Start, Shut down, Install APK and Camera preview on the left, Settings, Logs and Full screen on the right, all icons the same size, with no divider in between.
 - The log pane is collapsed by default and opens from the exclamation button on the right; the run log is also written to `qemu.log` under the application data directory.
 - Dragging a file into the window uploads it to the Android Download directory, and dropping an APK starts its install once the upload finishes.
 - Disks and settings live in `org.mutantcat.androidbox` under the system application data directory, which on macOS is `~/Library/Application Support`.
@@ -57,7 +57,9 @@ Core value:
 - With sound on, QEMU attaches an Intel HDA card and the guest Ubuntu routes Android audio through PulseAudio to the host speakers, while the microphone feeds the host input device into Android recording, calls and voice apps.
 - When the host sound device is busy or QEMU has no audio backend, the client degrades step by step (drop the microphone first, then all sound) and the guest still boots.
 - With the camera on, the client encodes the default host webcam as MJPEG and pushes it through the QEMU port mapping into the guest camera bridge, which writes it to a V4L2 loopback device at 15 frames per second and 640 pixels on the longest side.
-- The bundled Android image ships no camera HAL, so Android camera apps enumerate no device. The picture reaches the V4L2 loopback device in the Ubuntu support layer, and a guest browser watching http://192.168.240.1:7101/ shows it live.
+- The Camera preview button shows the picture QEMU forwards to http://127.0.0.1:7101/ directly in the client, so no guest browser is needed; the guest can also open http://192.168.240.1:7101/.
+- The bundled Android image ships no camera HAL that this guest can run, so Android camera apps still enumerate no device; the preview shows the same stream the Ubuntu support layer receives. Upstream Waydroid builds its camera provider for the 32-bit ABI on every architecture, so a guest that runs 64-bit code alone - Apple Silicon selects the arm64_only images, because those cores have no AArch32 - can never start it, and the client says exactly that instead of blaming the webcam. A guest provisioned by an older release must reboot once to install the current camera bridge, and the preview window says so while it waits.
+- Where the guest can run 32-bit code (an x86_64 host, or an ARM board with AArch32 enabled) the same images do carry a working provider, so Android camera apps see the loopback device there; starting the camera reports how many devices Android ends up exposing.
 - When the host has no webcam, or it is already in use, the preview falls back to a test pattern. Setting any of the three to `off` disables that device completely.
 - On macOS the first camera or microphone use asks for system permission: allow AndroidBox in System Settings > Privacy & Security.
 
@@ -75,7 +77,7 @@ Core value:
 
 ### 3. Install and Download
 
-Current version is `1.0.20261007`. Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch.
+Current version is `1.0.20261109`. Installers bundle Python, Qt, noVNC, QEMU, ADB and the complete Android system image; the Windows installer appends the compressed image to itself and expands it on first launch.
 
 Download the installer for your platform from [Releases](https://github.com/Mutantcat-Working-Group/AndroidBox/releases). Double-click to use it; every artifact has passed the CI installation self-check.
 
@@ -98,7 +100,7 @@ Notes:
 
 On first start, click **Prepare example guest disk** to prepare an Ubuntu 24.04 minimal guest disk: it downloads the pinned image, verifies the official SHA256, produces a QCOW2 disk the client recognizes automatically, and generates a NoCloud first-boot seed next to the disk. When the official source is unreachable it falls back to domestic mirrors, and **Use a local image** lets you pick an already downloaded image. After boot the cloud init logs in automatically, sets a known password and installs the Android container in one pass, instead of stopping at `ubuntu login:`.
 
-Pushing a `v*` version tag (for example `v1.0.20261007`, which must match the source version) makes GitHub Actions build all five installers and publish the Release; manual workflow runs only produce CI artifacts and never publish a version. An already published Release is not overwritten by repeat runs.
+Pushing a `v*` version tag (for example `v1.0.20261109`, which must match the source version) makes GitHub Actions build all five installers and publish the Release; manual workflow runs only produce CI artifacts and never publish a version. An already published Release is not overwritten by repeat runs.
 
 ### 4. Quick Start
 
@@ -219,11 +221,11 @@ The bundled Android images are produced by `scripts/build_system_images.py`. Bec
 
 | Platform | Current Version Artifact |
 | --- | --- |
-| Windows x86_64 | `AndroidBox-1.0.20261007-Windows-x86_64-Setup.exe` |
-| macOS ARM64 | `AndroidBox-1.0.20261007-macOS-arm64.dmg` |
-| macOS Intel | `AndroidBox-1.0.20261007-macOS-x86_64.dmg` |
-| Linux x86_64 | `AndroidBox-1.0.20261007-Linux-x86_64.AppImage` |
-| Linux ARM64 | `AndroidBox-1.0.20261007-Linux-aarch64.AppImage` |
+| Windows x86_64 | `AndroidBox-1.0.20261109-Windows-x86_64-Setup.exe` |
+| macOS ARM64 | `AndroidBox-1.0.20261109-macOS-arm64.dmg` |
+| macOS Intel | `AndroidBox-1.0.20261109-macOS-x86_64.dmg` |
+| Linux x86_64 | `AndroidBox-1.0.20261109-Linux-x86_64.AppImage` |
+| Linux ARM64 | `AndroidBox-1.0.20261109-Linux-aarch64.AppImage` |
 
 Windows on ARM devices (Snapdragon X Elite and similar) have no native ARM64 installer: Qt for Python publishes no official Windows ARM64 binaries, so a natively built client cannot start. Use the x86_64 installer on those machines and let the Windows 11 ARM64 compatibility layer run it; if x64 emulation is unavailable (some virtual machines or stripped-down images), run AndroidBox on another machine on the same network and reach it through noVNC.
 

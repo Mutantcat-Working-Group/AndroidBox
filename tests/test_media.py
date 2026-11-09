@@ -89,6 +89,19 @@ class MediaCommandTests(unittest.TestCase):
         self.assertIn(f",hostfwd=tcp:127.0.0.1:7101-:{CAMERA_GUEST_PORT}", netdev)
         self.assertIn("intel-hda", command)
 
+    def test_the_preview_endpoint_is_forwarded_only_when_asked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            disk = Path(directory) / "disk.qcow2"
+            disk.touch()
+            config = VMConfig(disk=str(disk))
+            command = build_command(config, "qemu", "tcg", 5900, 6000, 6001,
+                                    camera_port=7100, preview_port=7200, audio_driver=None)
+            netdev = command[command.index("-netdev") + 1]
+            self.assertIn(",hostfwd=tcp:127.0.0.1:7200-:7101", netdev)
+            plain = build_command(config, "qemu", "tcg", 5900, 6000, 6001,
+                                  camera_port=7100, audio_driver=None)
+            self.assertNotIn(":7101", plain[plain.index("-netdev") + 1])
+
     def test_no_audio_devices_when_sound_is_off(self):
         command = self.command(audio="off", microphone="off", driver=None)
         self.assertNotIn("intel-hda", command)
@@ -162,6 +175,40 @@ class CameraStreamTests(unittest.TestCase):
         self.assertIsNone(camera.parse_guest_camera_count("nothing here"))
         self.assertIsNone(camera.parse_guest_camera_count(""))
 
+    def test_the_probe_reads_the_abilist_and_the_provider(self):
+        report = camera.parse_guest_camera_probe(
+            "Camera status:\nNumber of camera devices: 0\n"
+            "arm64-v8a\n"
+            "android.hardware.camera.provider@2.4-service\n")
+        self.assertEqual(report, (0, ["arm64-v8a"], True))
+        blind = camera.parse_guest_camera_probe("Number of camera devices: 0\n")
+        self.assertEqual(blind, (0, [], False))
+        # A dumpsys dump mentions plenty of numbers; only an ABI line counts.
+        self.assertEqual(camera.parse_guest_camera_abilist("Camera 0: 30 fps\nx86_64,x86\n"),
+                         ["x86_64", "x86"])
+
+    def test_a_guest_that_sees_cameras_needs_no_note(self):
+        self.assertIsNone(camera.guest_camera_hal_note(2, ["arm64-v8a"], True))
+        self.assertIsNone(camera.guest_camera_hal_note(1, [], False))
+
+    def test_a_64bit_only_guest_reports_why_the_hal_cannot_run(self):
+        note = camera.guest_camera_hal_note(0, ["arm64-v8a"], True)
+        self.assertEqual(note, camera.GUEST_CAMERA_HAL_32BIT_ONLY)
+        self.assertIn(camera.CAMERA_PREVIEW_URL, note)
+        self.assertIn("Camera preview", note)
+
+    def test_a_guest_that_can_run_the_hal_only_waits_for_it(self):
+        # 32-bit support present: the installed HAL has every chance of coming
+        # up, so the note must not claim the host can never have a camera.
+        self.assertEqual(camera.guest_camera_hal_note(0, ["arm64-v8a", "armeabi-v7a"], True),
+                         camera.GUEST_CAMERA_HAL_NOT_UP_YET)
+        self.assertEqual(camera.guest_camera_hal_note(0, ["x86_64", "x86"], True),
+                         camera.GUEST_CAMERA_HAL_NOT_UP_YET)
+
+    def test_an_image_without_a_provider_reports_a_missing_hal(self):
+        self.assertEqual(camera.guest_camera_hal_note(0, ["arm64-v8a"], False),
+                         camera.GUEST_CAMERA_HAL_MISSING)
+
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
     def test_a_guest_without_a_camera_hal_says_so(self):
         streamer = camera.CameraStreamer(7101)
@@ -176,6 +223,22 @@ class CameraStreamTests(unittest.TestCase):
         with patch("androidbox.camera.run", return_value=answering):
             streamer._run_guest_camera_probe()
         self.assertIn("1 camera device", reports[1])
+
+    @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
+    def test_the_probe_asks_one_shell_call_for_cameras_abis_and_provider(self):
+        streamer = camera.CameraStreamer(7101)
+        streamer.set_guest_probe("/bundle/adb", "127.0.0.1:5555")
+        reports = []
+        streamer.status.connect(reports.append)
+        arm_only = subprocess.CompletedProcess(
+            [], 0, "Number of camera devices: 0\narm64-v8a\n"
+            "android.hardware.camera.provider@2.7-external-service\n", "")
+        with patch("androidbox.camera.run", return_value=arm_only) as call:
+            streamer._run_guest_camera_probe()
+        command = call.call_args[0][0]
+        self.assertIn("shell", command)
+        self.assertIn(camera.CAMERA_PROBE_SHELL, command)
+        self.assertEqual(reports, [camera.GUEST_CAMERA_HAL_32BIT_ONLY])
 
     @unittest.skipUnless(camera.CAMERA_STACK, "QtMultimedia unavailable")
     def test_a_probe_that_cannot_run_stays_quiet(self):
@@ -540,6 +603,21 @@ class DesktopMediaTests(unittest.TestCase):
         self.assertEqual(dialog.config().camera, "off")
         window.close()
 
+    def test_the_camera_button_opens_the_forwarded_preview_port(self):
+        window = self.window()
+        running = type("Process", (), {"poll": staticmethod(lambda: None)})
+        window.vm.process = running()
+        window.vm.preview_port = 7200
+        window.update_actions()
+        self.assertTrue(window.preview_action.isEnabled())
+        with patch("androidbox.desktop.CameraPreview") as preview:
+            window.show_preview()
+        preview.assert_called_once_with(7200, window)
+        window.vm.process = None
+        window.update_actions()
+        self.assertFalse(window.preview_action.isEnabled())
+        window.close()
+
     def test_camera_follows_the_guest_lifecycle(self):
         window = self.window()
         started = []
@@ -562,16 +640,16 @@ class DesktopMediaTests(unittest.TestCase):
 
         window.vm.process = type("Process", (), {"poll": staticmethod(lambda: None)})()
         window.vm.camera_port = 7101
-        with patch("androidbox.desktop.CameraStreamer", FakeStreamer):
-            window.start_camera()
+        with patch("androidbox.session.CameraStreamer", FakeStreamer):
+            window.session.start_camera()
             self.assertEqual(started, [7101])
-            window.start_camera()  # a second call must not stream twice
+            window.session.start_camera()  # a second call must not stream twice
             self.assertEqual(started, [7101])
-            window.stop_camera()
-            window.stop_camera()  # stopping twice releases the webcam once
+            window.session.stop_camera()
+            window.session.stop_camera()  # stopping twice releases the webcam once
         self.assertEqual(stopped, [7101])
         window.vm.process = None
-        with patch("androidbox.desktop.CameraStreamer", FakeStreamer):
-            window.start_camera()
+        with patch("androidbox.session.CameraStreamer", FakeStreamer):
+            window.session.start_camera()
         self.assertEqual(started, [7101])  # a stopped guest starts no stream
         window.close()

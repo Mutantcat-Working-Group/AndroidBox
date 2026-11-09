@@ -116,23 +116,25 @@ def run_self_test(argv):
                 disk = Path(directory) / "guest.raw"
                 disk.write_bytes(b"\x00" * 512)
                 with patch("androidbox.desktop.QFileDialog.getOpenFileName", return_value=(str(disk), "")), \
-                        patch.object(window.pool, "submit") as submit:
+                        patch.object(window.session.pool, "submit") as submit:
                     window.config = VMConfig()
                     window.start_vm()
                     assert window.config.disk == str(disk)
                     assert window.config.disk_format == "raw"
                     assert load_config().disk == str(disk)
                     submit.assert_called_once()
-                    window.future = None
+                    window.session.future = None
                     window.close_display()
                     window.update_actions()
                 assert window.grab().save(args.screenshot)
                 window.resize(640, 480)
                 app.processEvents()
                 assert window.stack.width() > 300
-                window.server = DisplayServer()
+                if window.session.server is not None:
+                    window.session.server.close()
+                window.session.server = DisplayServer()
                 port = reserve_ports(1)[0]
-                window.view.setUrl(QUrl(f"{window.server.url}#port={port}&password=smoketest"))
+                window.view.setUrl(QUrl(f"{window.session.display_url()}#port={port}&password=smoketest"))
                 window.stack.setCurrentIndex(1)
                 QTimer.singleShot(200, check_display)
             except Exception as error:

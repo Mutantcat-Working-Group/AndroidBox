@@ -67,6 +67,26 @@ the actual `guest/provision.sh --dedicated-guest` script. The Ubuntu base image
 was checked against the official SHA256 manifest. The Android system/vendor
 images are the upstream arm64_only LineageOS 20 builds dated 2026-04-03.
 
+Camera HAL evidence (live check, 2026-10-22):
+
+- `dumpsys media.camera` on that guest reports `Number of camera devices: 0`.
+  The arm64_only vendor image declares the external camera provider in its VINTF
+  manifest and ships `external_camera_config.xml`, but no provider binary: the
+  `waydroid_arm64_only` channel carries none, while the `waydroid_arm64` and
+  `waydroid_x86_64` channels carry one built for the 32-bit ABI only
+  (`readelf` reports ELF 32-bit ARM and Intel 80386 respectively).
+- The Apple Silicon guest cannot run those binaries: `execve` of the 32-bit
+  `boringssl_self_test32` from the full vendor image fails with `ENOEXEC`, which
+  the shell then reports as a script syntax error, so AArch32 is absent.
+- The 2026-09-27 `waydroid_arm64` pair does not boot on this host either, for
+  the same reason: its 32-bit `boringssl_self_test32_vendor` service has
+  `reboot_on_failure` and reboots the container in a loop.
+- Conclusion: Android camera apps cannot reach the webcam on an arm64_only
+  guest, whatever image release is installed. The webcam still reaches the
+  Ubuntu support layer, where the client preview and
+  http://192.168.240.1:7101/ show it, and `guest/provision.sh` records which
+  case the installed vendor image is in `/var/lib/androidbox/camera-hal.txt`.
+
 Passed in the source Qt application:
 
 - Linux boot, Binder module loading, LXC container startup, Android

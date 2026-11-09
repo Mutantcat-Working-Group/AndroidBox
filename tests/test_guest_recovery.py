@@ -23,7 +23,7 @@ class GuestRecoveryTests(unittest.TestCase):
         application = QApplication.instance() or QApplication([])
         with patch("androidbox.desktop.state_directory", return_value=Path(directory)), \
                 patch("androidbox.runtime.state_directory", return_value=Path(directory)), \
-                patch("androidbox.desktop.DisplayServer"), \
+                patch("androidbox.session.DisplayServer"), \
                 patch("androidbox.power._spawn", return_value=None):
             window = MainWindow()
         self.addCleanup(window.close)
@@ -37,29 +37,29 @@ class GuestRecoveryTests(unittest.TestCase):
         window.vm.process = SimpleNamespace(poll=lambda: code, returncode=code)
 
     def test_a_guest_that_exits_on_its_own_is_started_again(self):
-        from androidbox import desktop
+        from androidbox.session import MAX_GUEST_RESTARTS
 
         with tempfile.TemporaryDirectory() as directory:
             application, window = self.build_window(directory)
-            window.was_running = True
-            window.shutdown_requested = False
+            window.session.was_running = True
+            window.session.shutdown_requested = False
             self.exited(window)
-            with patch.object(window, "start_vm") as start:
+            with patch.object(window.session, "start") as start:
                 window.poll()
                 self.assertEqual(start.call_count, 1)
-                self.assertEqual(window.restarts, 1)
-                self.assertTrue(window.recovering)
+                self.assertEqual(window.session.restarts, 1)
+                self.assertTrue(window.session.recovering)
                 self.assertIn("restarting the guest", window.log.toPlainText())
                 # A host that keeps dropping the guest gets a bounded budget.
-                for _ in range(desktop.MAX_GUEST_RESTARTS - 1):
-                    window.was_running = True
+                for _ in range(MAX_GUEST_RESTARTS - 1):
+                    window.session.was_running = True
                     window.poll()
-                self.assertEqual(start.call_count, desktop.MAX_GUEST_RESTARTS)
-                self.assertEqual(window.restarts, desktop.MAX_GUEST_RESTARTS)
+                self.assertEqual(start.call_count, MAX_GUEST_RESTARTS)
+                self.assertEqual(window.session.restarts, MAX_GUEST_RESTARTS)
                 # The budget spent, control returns to the user.
-                window.was_running = True
+                window.session.was_running = True
                 window.poll()
-                self.assertEqual(start.call_count, desktop.MAX_GUEST_RESTARTS)
+                self.assertEqual(start.call_count, MAX_GUEST_RESTARTS)
             self.assertIn("press Start to try again", window.log.toPlainText())
             self.assertEqual(window.empty_status.text(), "QEMU exited (1)")
             self.assertIsNotNone(application)
@@ -67,23 +67,23 @@ class GuestRecoveryTests(unittest.TestCase):
     def test_a_guest_the_user_shut_down_is_left_stopped(self):
         with tempfile.TemporaryDirectory() as directory:
             application, window = self.build_window(directory)
-            window.was_running = True
-            window.shutdown_requested = True
+            window.session.was_running = True
+            window.session.shutdown_requested = True
             self.exited(window)
-            with patch.object(window, "start_vm") as start:
+            with patch.object(window.session, "start") as start:
                 window.poll()
                 self.assertFalse(start.called)
-            self.assertEqual(window.restarts, 0)
+            self.assertEqual(window.session.restarts, 0)
             self.assertEqual(window.empty_status.text(), "QEMU exited (1)")
             self.assertIsNotNone(application)
 
     def test_a_clean_shutdown_is_not_a_crash(self):
         with tempfile.TemporaryDirectory() as directory:
             application, window = self.build_window(directory)
-            window.was_running = True
-            window.shutdown_requested = False
+            window.session.was_running = True
+            window.session.shutdown_requested = False
             self.exited(window, code=0)
-            with patch.object(window, "start_vm") as start:
+            with patch.object(window.session, "start") as start:
                 window.poll()
                 self.assertFalse(start.called)
             self.assertEqual(window.empty_status.text(), "Stopped")
@@ -92,27 +92,27 @@ class GuestRecoveryTests(unittest.TestCase):
     def test_a_recovery_keeps_the_budget_a_fresh_start_clears_it(self):
         with tempfile.TemporaryDirectory() as directory:
             application, window = self.build_window(directory)
-            with patch.object(window.pool, "submit", return_value=None):
-                window.restarts = 3
-                window.recovering = True
+            with patch.object(window.session.pool, "submit", return_value=None):
+                window.session.restarts = 3
+                window.session.recovering = True
                 window.start_vm()
-                self.assertEqual(window.restarts, 3)
+                self.assertEqual(window.session.restarts, 3)
                 # A start the user asked for begins a new budget.
-                window.restarts = 4
+                window.session.restarts = 4
                 window.start_vm()
-                self.assertEqual(window.restarts, 0)
-                self.assertFalse(window.recovering)
+                self.assertEqual(window.session.restarts, 0)
+                self.assertFalse(window.session.recovering)
             self.assertIsNotNone(application)
 
     def test_an_operation_in_flight_is_not_interrupted_by_a_recovery(self):
         with tempfile.TemporaryDirectory() as directory:
             application, window = self.build_window(directory)
-            window.future = Future()
-            window.operation = "start"
-            with patch.object(window, "start_vm") as start:
-                window.recover_guest(1)
+            window.session.future = Future()
+            window.session.operation = "start"
+            with patch.object(window.session, "start") as start:
+                window.session.recover_guest(1)
                 self.assertFalse(start.called)
-            window.future = None
+            window.session.future = None
             self.assertIsNotNone(application)
 
 

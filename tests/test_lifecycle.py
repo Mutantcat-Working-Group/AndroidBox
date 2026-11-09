@@ -66,3 +66,15 @@ class LifecycleTests(unittest.TestCase):
         vm.process.poll.return_value = None
         with self.assertRaisesRegex(RuntimeError, "already running"):
             vm.start(VMConfig(), "qemu", "tcg", Path("unused.log"))
+
+    def test_start_reserves_a_forwarded_camera_preview_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            disk = Path(directory) / "disk.qcow2"
+            disk.touch()
+            vm = VirtualMachine()
+            with patch("androidbox.runtime.popen", return_value=Mock()), \
+                    patch.object(vm, "survives_startup", return_value=True):
+                vm.start(VMConfig(disk=str(disk)), "qemu", "tcg", Path(directory) / "qemu.log")
+            self.assertIsNotNone(vm.preview_port)
+            self.assertNotEqual(vm.preview_port, vm.camera_port)
+            vm.terminate()

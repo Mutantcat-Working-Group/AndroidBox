@@ -112,15 +112,15 @@ class MainWindowToolbarTests(unittest.TestCase):
 
     def test_main_window_keeps_the_expected_action_names(self):
         _, window = self.window()
-        for name in ("start_action", "stop_action", "install_action", "settings_action",
-                     "logs_action", "fullscreen_action"):
+        for name in ("start_action", "stop_action", "install_action", "preview_action",
+                     "settings_action", "logs_action", "fullscreen_action"):
             self.assertTrue(hasattr(window, name), name)
         toolbar = window.findChildren(QToolBar)[0]
         self.assertFalse(any(action.isSeparator() for action in toolbar.actions()))
         self.assertEqual(toolbar.iconSize(), QSize(TOOLBAR_ICON_SIZE, TOOLBAR_ICON_SIZE))
-        # Icon-only buttons: three runtime controls, three window controls, and
+        # Icon-only buttons: four runtime controls, three window controls, and
         # the Linux native button on Linux alone.
-        expected = 7 if sys.platform.startswith("linux") else 6
+        expected = 8 if sys.platform.startswith("linux") else 7
         self.assertEqual(len(button_actions(toolbar)), expected)
         self.assertEqual(toolbar.toolButtonStyle(), Qt.ToolButtonIconOnly)
         window.close()

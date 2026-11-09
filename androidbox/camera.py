@@ -59,16 +59,44 @@ CAMERA_RECONNECT_DELAY_MS = 1500
 CAMERA_STABLE_CONNECTION_SECONDS = 10.0
 CAMERA_WAIT_REPORT_SECONDS = 20.0
 # The bridge serves the same picture over HTTP on the Waydroid bridge address,
-# which the guest browser can open even though the Android image has no camera
-# HAL and so no Android camera app can enumerate a device.
+# which the guest browser can open even when the Android image exposes no
+# camera to apps and so no camera app can enumerate a device.
 CAMERA_PREVIEW_HOST = "192.168.240.1"
 CAMERA_PREVIEW_PORT = 7101
 CAMERA_PREVIEW_URL = f"http://{CAMERA_PREVIEW_HOST}:{CAMERA_PREVIEW_PORT}/"
 GUEST_CAMERA_HAL_MISSING = (
-    "The bundled Android image provides no camera HAL, so Android camera apps see no "
-    "device. The webcam picture reaches the Ubuntu support layer instead, where the "
-    "guest browser shows it at " + CAMERA_PREVIEW_URL
+    "This Android image exposes no camera HAL to apps, so Android camera apps see no "
+    "device: upstream Waydroid builds its camera provider for the 32-bit ABI only, and "
+    "the arm64_only images a host without AArch32 uses therefore ship none. The webcam "
+    "picture reaches the Ubuntu support layer instead, where the guest browser shows it "
+    "at " + CAMERA_PREVIEW_URL
 )
+# Upstream Waydroid builds its camera HAL for the 32-bit ABI only, on every
+# architecture. A guest that runs 64-bit code alone - Apple Silicon picks the
+# arm64_only images, because those cores have no AArch32 - can therefore never
+# start it, no matter which image release is installed.
+CAMERA_HAL_COMPANION_ABI = {"arm64-v8a": "armeabi-v7a", "x86_64": "x86"}
+GUEST_CAMERA_HAL_32BIT_ONLY = (
+    "The Android image ships a 32-bit camera HAL and this guest runs 64-bit code "
+    "only, so Android camera apps cannot use the webcam on this host. The picture "
+    "the bridge receives is still shown by the Camera preview button and by a guest "
+    "browser at " + CAMERA_PREVIEW_URL
+)
+GUEST_CAMERA_HAL_NOT_UP_YET = (
+    "The camera HAL is installed but Android has not exposed a camera device yet; "
+    "the webcam picture is already available in the Camera preview and in a guest "
+    "browser at " + CAMERA_PREVIEW_URL
+)
+# One shell call answers three separate questions: how many cameras Android
+# sees, which ABIs the image runs (the 32-bit one is what the HAL needs) and
+# whether a provider binary is installed at all. Asking them one by one would
+# triple the number of ADB round trips a single probe costs.
+CAMERA_PROBE_SHELL = (
+    "dumpsys media.camera; getprop ro.product.cpu.abilist; "
+    "ls /vendor/bin/hw 2>/dev/null | grep camera.provider"
+)
+CAMERA_KNOWN_ABIS = frozenset({"arm64-v8a", "armeabi-v7a", "armeabi", "x86_64",
+                               "x86", "riscv64"})
 CAMERA_WAITING_FOR_GUEST = "Waiting for the guest camera bridge to come up"
 CAMERA_PERMISSION_DENIED = (
     "Camera permission denied. Allow AndroidBox in System Settings > "
@@ -159,6 +187,50 @@ def parse_guest_camera_count(output):
     """Return how many camera devices the guest reports, or None when unknown."""
     match = re.search(r"Number of camera devices:\s*(\d+)", output or "")
     return int(match.group(1)) if match else None
+
+
+def parse_guest_camera_abilist(output):
+    """Return the ABIs the Android image runs, in the order it prefers them."""
+    for line in (output or "").splitlines():
+        # getprop prints the list as one bare line, while a dumpsys dump is
+        # full of indented lines with spaces; only the former is an ABI list.
+        stripped = line.strip()
+        if not stripped or any(character.isspace() for character in stripped):
+            continue
+        abis = stripped.split(",")
+        if all(item in CAMERA_KNOWN_ABIS for item in abis):
+            return abis
+    return []
+
+
+def parse_guest_camera_probe(output):
+    """Return what one camera probe shell call learned about the guest.
+
+    The probe asks the guest three things at once, so the answer is a triple:
+    the number of cameras Android exposes (None when it said nothing usable),
+    the ABIs the image runs and whether a camera provider binary is installed.
+    """
+    text = output or ""
+    return (parse_guest_camera_count(text),
+            parse_guest_camera_abilist(text),
+            "camera.provider" in text)
+
+
+def guest_camera_hal_note(count, abilist, provider_present):
+    """Explain a guest that exposes no camera, or None when there is nothing to say.
+
+    "No camera HAL" and "a 32-bit HAL that this guest cannot run" need very
+    different answers from the user, and only the second one is permanent, so
+    the probe separates them instead of reporting one vague failure.
+    """
+    if count:
+        return None
+    if not provider_present:
+        return GUEST_CAMERA_HAL_MISSING
+    companion = CAMERA_HAL_COMPANION_ABI.get(abilist[0] if abilist else "")
+    if companion and companion not in abilist:
+        return GUEST_CAMERA_HAL_32BIT_ONLY
+    return GUEST_CAMERA_HAL_NOT_UP_YET
 
 
 if CAMERA_STACK:
@@ -412,15 +484,17 @@ if CAMERA_STACK:
             if not self.adb or not self.target:
                 return
             try:
-                result = run([self.adb, "-s", self.target, "shell", "dumpsys",
-                              "media.camera"], timeout=20)
+                result = run([self.adb, "-s", self.target, "shell", CAMERA_PROBE_SHELL],
+                             timeout=30)
             except Exception:
                 return
-            count = parse_guest_camera_count(result.stdout)
-            if count == 0:
-                self.status.emit(GUEST_CAMERA_HAL_MISSING)
-            elif count:
+            count, abilist, provider = parse_guest_camera_probe(result.stdout)
+            if count is None:
+                return
+            if count:
                 self.status.emit(f"The guest exposes {count} camera device(s) to Android")
+                return
+            self.status.emit(guest_camera_hal_note(count, abilist, provider))
 
         def _disconnected(self):
             if self.camera is None and self._device is None:
