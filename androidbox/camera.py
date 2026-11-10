@@ -83,9 +83,10 @@ GUEST_CAMERA_HAL_32BIT_ONLY = (
     "browser at " + CAMERA_PREVIEW_URL
 )
 GUEST_CAMERA_HAL_NOT_UP_YET = (
-    "The camera HAL is installed but Android has not exposed a camera device yet; "
-    "the webcam picture is already available in the Camera preview and in a guest "
-    "browser at " + CAMERA_PREVIEW_URL
+    "The camera HAL is installed but Android has not exposed a camera device yet. "
+    "If this guest has not rebooted since the last update, restart it so the "
+    "current camera provider is installed. The webcam picture is already "
+    "available in the Camera preview and in a guest browser at " + CAMERA_PREVIEW_URL
 )
 # One shell call answers three separate questions: how many cameras Android
 # sees, which ABIs the image runs (the 32-bit one is what the HAL needs) and

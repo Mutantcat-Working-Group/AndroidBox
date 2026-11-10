@@ -116,12 +116,44 @@ class BrandingTests(unittest.TestCase):
     def test_guest_records_why_android_may_see_no_camera(self):
         provision = source(ROOT / "guest/provision.sh")
         # The loopback node is not the Android camera: an app only gets a device
-        # when the vendor image ships a provider this CPU can run, and upstream
-        # builds it 32-bit only. The audit keeps the two cases apart in the log.
+        # when a camera provider this CPU can run is installed, and upstream
+        # builds its own for the 32-bit ABI only. The audit keeps the cases
+        # apart in the log.
         self.assertIn("audit_camera_hal", provision)
         self.assertIn("/var/lib/androidbox/camera-hal.txt", provision)
         self.assertIn("EI_CLASS", provision)
         self.assertIn("camera\\.provider", provision)
+
+    def test_guest_installs_the_external_camera_provider(self):
+        provision = source(ROOT / "guest/provision.sh")
+        # The arm64_only image ships no provider binary, so the guest has to
+        # put one where Android starts it from. All three parts are required:
+        # the binary, the VINTF declaration and the init service.
+        self.assertIn("install_camera_hal", provision)
+        self.assertIn("/var/lib/androidbox/overlay/vendor", provision)
+        self.assertIn("bin/hw", provision)
+        self.assertIn("etc/vintf/manifest", provision)
+        self.assertIn("etc/init", provision)
+
+    def test_camera_provider_uses_the_name_the_image_labels(self):
+        # The vendor image's own vendor_file_contexts only labels
+        # android.hardware.camera.provider@2.x-...-service as
+        # hal_camera_default_exec; a different name would get no label and init
+        # would refuse to start it.
+        build = source(ROOT / "guest/camera-hal/build.sh")
+        self.assertIn("android.hardware.camera.provider@2.4-external-service", build)
+
+        deploy = ROOT / "guest/camera-hal/deploy"
+        manifest = source(deploy / "android.hardware.camera.provider@2.4-external-service.xml")
+        self.assertIn('format="aidl"', manifest)
+        self.assertIn("<instance>external/0</instance>", manifest)
+
+        rc = source(deploy / "android.hardware.camera.provider@2.4-external-service.rc")
+        self.assertIn("android.hardware.camera.provider@2.4-external-service", rc)
+        self.assertIn("class hal", rc)
+        # The image's /system/etc/passwd is empty, so a named account would
+        # leave init unable to resolve the uid.
+        self.assertIn("user system", rc)
 
 
 if __name__ == "__main__":

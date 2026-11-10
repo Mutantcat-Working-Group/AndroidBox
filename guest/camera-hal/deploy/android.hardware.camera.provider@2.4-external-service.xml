@@ -1,0 +1,23 @@
+<!--
+  VINTF declaration for the AndroidBox external camera provider.
+
+  cameraservice only starts a HAL it can find in the device manifest, and it
+  builds that manifest from every XML under /vendor/etc/vintf/manifest. The
+  arm64_only Waydroid vendor image declares no camera provider at all - it
+  ships external_camera_config.xml for a HAL that was never included - so this
+  manifest is what tells Android the provider exists.
+
+  AIDL HALs are declared with format="aidl" and the interface name alone; the
+  instance is "external/0" because the provider registers itself as
+  android.hardware.camera.provider.ICameraProvider/external/0.
+-->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.camera.provider</name>
+        <version>2</version>
+        <interface>
+            <name>ICameraProvider</name>
+            <instance>external/0</instance>
+        </interface>
+    </hal>
+</manifest>

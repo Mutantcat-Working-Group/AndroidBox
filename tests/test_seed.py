@@ -48,6 +48,21 @@ class SeedTests(unittest.TestCase):
         self.assertIn("dhcp4: true", network)
         self.assertIn("dhcp6: false", network)
 
+    def test_network_config_never_blocks_boot_on_a_missing_lease(self):
+        # Without optional: true, systemd-networkd-wait-online has no timeout to
+        # fall back on and every boot sat at "Job .../start running" for minutes.
+        network = seed.network_config()
+        self.assertIn("optional: true", network)
+        self.assertNotIn("critical: true", network)
+
+    def test_network_config_carries_a_nameserver_for_the_android_container(self):
+        # The Android container resolves names through this host, so a lease with
+        # no DNS server leaves it with ERR_NAME_NOT_RESOLVED in every app.
+        network = seed.network_config()
+        self.assertIn("nameservers:", network)
+        self.assertIn("10.0.2.3", network)  # QEMU user-mode resolver
+        self.assertIn("use-dns: false", network)  # ignore a lease without one
+
     def test_write_seed_changes_instance_id_with_version(self):
         with tempfile.TemporaryDirectory() as directory:
             disk = Path(directory) / "androidbox-aarch64.qcow2"

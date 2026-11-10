@@ -207,7 +207,7 @@ for source in "${SOURCES[@]}"; do
         || die "compiling ${source} failed"
 done
 
-OUTPUT="${BUILD_DIR}/android.hardware.camera.provider@1.0-external-service"
+OUTPUT="${BUILD_DIR}/android.hardware.camera.provider@2.4-external-service"
 log "linking ${OUTPUT##*/}"
 "${CLANGXX}" "${LDFLAGS[@]}" "${OBJ_DIR}"/*.o -o "${OUTPUT}" || die "linking failed"
 

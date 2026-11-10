@@ -1,3 +1,34 @@
+## AndroidBox 1.0.20261110
+
+The guest now has working DNS and a camera Android can actually open.
+
+**Networking.** The guest's netplan described the network card but never named
+a nameserver, so any DHCP lease that carried no DNS server list left the
+Android container resolving nothing: inside Android every page failed with
+`net::ERR_NAME_NOT_RESOLVED` while the Ubuntu support layer's own traffic was
+fine. The guest configuration now names QEMU's user-mode resolver (`10.0.2.3`)
+explicitly and ignores whatever the lease claims, so the container always has
+a resolver. The interface is also marked optional, so a boot no longer sits at
+"Job systemd-networkd-wait-online.service/start running" for minutes before
+anything else can start.
+
+**Camera.** The `arm64_only` Waydroid vendor image ships no camera provider
+binary at all - it carries `external_camera_config.xml` and the SELinux label
+for a provider, but never the provider itself - so Android camera apps always
+answered "No cameras were found". First boot now installs the 64-bit provider
+built from `guest/camera-hal` into Waydroid's vendor overlay, together with
+the VINTF manifest cameraservice needs in order to find it and the init
+service that starts it. The binary deliberately keeps the name the image's own
+`vendor_file_contexts` already labels `hal_camera_default_exec`, so nothing in
+the read-only image has to be relabelled. The images job builds the provider
+once for aarch64 and hands it to every build job, so the installers carry a
+provider that matches the guest architecture.
+
+**Diagnostics.** When Android still reports no camera, the client now
+separates a guest that has not been rebooted into the new provider yet from
+one whose image genuinely ships no HAL, instead of reporting one vague
+failure.
+
 ## AndroidBox 1.0.20261109
 
 The guest state machine moved out of the Qt window. What the guest is doing

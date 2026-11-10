@@ -1,0 +1,23 @@
+# AndroidBox external camera provider.
+#
+# init starts this service from /vendor/bin/hw and the provider registers on
+# the service manager as ...ICameraProvider/external/0, which matches the
+# VINTF manifest beside this file. The binary name is the one the vendor
+# image's own vendor_file_contexts already labels hal_camera_default_exec, so
+# nothing in the image needs relabelling.
+#
+# user/group match every other HAL this image ships (system / system): the
+# image's /system/etc/passwd is empty, so a named account such as cameraserver
+# would leave init unable to resolve the uid.
+#
+# The loopback device the guest support layer feeds is passed explicitly: the
+# external camera HAL reads one V4L2 node, and /dev/video0 is where
+# guest/provision.sh points v4l2loopback.
+service vendor.camera-external /vendor/bin/hw/android.hardware.camera.provider@2.4-external-service --device=/dev/video0
+    class hal
+    user system
+    group system input
+    # The loopback node is written by the Ubuntu support layer, not by Android,
+    # so the HAL only needs to read it.
+    capabilities AUDIT_WRITE
+    ioprio rt 4

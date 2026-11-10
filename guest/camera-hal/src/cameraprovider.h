@@ -23,7 +23,7 @@ class CameraProvider : public aidl::android::hardware::camera::provider::BnCamer
 public:
     // The device name the framework expects, in the form
     // "device@<interface major>.<minor>/<type>/<id>".
-    static constexpr const char* kDeviceName = "device@1.0/external/0";
+    static constexpr const char* kDeviceName = "device@2.4/external/0";
     // The instance name this service registers as, matching the manifest.
     static constexpr const char* kServiceName =
             "android.hardware.camera.provider.ICameraProvider/external/0";

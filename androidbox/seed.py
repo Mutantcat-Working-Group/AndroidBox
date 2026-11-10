@@ -72,7 +72,18 @@ def network_config():
     not reliably match the QEMU virtio interface names, so the guest can boot
     without ever taking a DHCP lease - which leaves the Android container
     inside it without an uplink. ``e*`` covers predictable names (ens3,
-    enp0s3) as well as hardware-path names (enp0s3 on PCI virtio slots).
+    enp0s5) as well as hardware-path names (enp0s3 on PCI virtio slots).
+
+    ``optional: true`` matters: systemd-networkd-wait-online without it blocks
+    the whole boot on an interface netplan matched but the kernel has not
+    configured yet, which is what made every guest sit at
+    "Job systemd-networkd-wait-online.service/start running" for minutes.
+
+    The nameservers are spelled out instead of taken from DHCP because the
+    Android container reaches DNS through this host, and a lease that carries
+    no server list leaves the container resolving nothing at all. ``10.0.2.3``
+    is QEMU's built-in resolver on user-mode networking; it forwards to
+    whatever the host actually uses.
     """
     return """version: 2
 ethernets:
@@ -80,7 +91,13 @@ ethernets:
     match:
       name: e*
     dhcp4: true
+    dhcp4-overrides:
+      use-dns: false
     dhcp6: false
+    optional: true
+    nameservers:
+      addresses: [10.0.2.3]
+      search: []
 """
 
 

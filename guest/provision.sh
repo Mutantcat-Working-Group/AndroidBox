@@ -168,19 +168,51 @@ install -m 0644 "$source_dir/guest/greetd.toml" /etc/greetd/config.toml
 
 androidbox init
 
+# The arm64_only Waydroid vendor image ships no camera provider binary at all:
+# it carries external_camera_config.xml and the SELinux label for one, but the
+# ABI the provider was built for (32-bit) cannot run here, because Apple
+# Silicon cores have no AArch32. The provider built by guest/camera-hal is the
+# 64-bit replacement, and it is installed through Waydroid's vendor overlay
+# rather than by editing the read-only image, so a later image update cannot
+# silently drop it.
+#
+# Three files have to land together or Android never starts the service:
+#   * the binary in /vendor/bin/hw, under the name the image's own
+#     vendor_file_contexts already labels hal_camera_default_exec;
+#   * a VINTF manifest under /vendor/etc/vintf/manifest, because cameraservice
+#     only starts a HAL it finds in the device manifest;
+#   * an init .rc under /vendor/etc/init, because nothing else starts it.
+camera_hal_source="$source_dir/guest/camera-hal/build/android.hardware.camera.provider@2.4-external-service"
+camera_hal_overlay=/var/lib/androidbox/overlay/vendor
+install_camera_hal() {
+    if [[ ! -x $camera_hal_source ]]; then
+        echo "NOTE: no camera provider binary was built for this guest; Android camera apps will enumerate no device. The webcam still reaches the Ubuntu layer, where the client preview and http://192.168.240.1:7101/ show it." >&2
+        return 0
+    fi
+    install -d "$camera_hal_overlay/bin/hw" "$camera_hal_overlay/etc/vintf/manifest" \
+        "$camera_hal_overlay/etc/init"
+    install -m 0755 "$camera_hal_source" "$camera_hal_overlay/bin/hw/"
+    install -m 0644 "$source_dir/guest/camera-hal/deploy/android.hardware.camera.provider@2.4-external-service.xml" \
+        "$camera_hal_overlay/etc/vintf/manifest/"
+    install -m 0644 "$source_dir/guest/camera-hal/deploy/android.hardware.camera.provider@2.4-external-service.rc" \
+        "$camera_hal_overlay/etc/init/"
+    echo "Installed the external camera provider into the vendor overlay."
+}
+install_camera_hal || echo "WARNING: the camera provider could not be installed." >&2
+
 # The loopback node and the Android camera are two separate questions. The
 # bridge writes the webcam into /dev/video0 whatever the vendor image holds,
-# but an Android camera app only sees a device when the vendor image ships a
-# camera provider the guest CPU can actually run. Upstream builds that
-# provider for the 32-bit ABI on every architecture, so a guest that runs
-# 64-bit code alone - Apple Silicon picks the arm64_only images, because those
-# cores have no AArch32 - can never start it. Record what is installed here so
-# the log and a bug report can tell a missing HAL from an unrunnable one.
+# but an Android camera app only sees a device when a camera provider the
+# guest CPU can actually run is installed. Record what is in place here so the
+# log and a bug report can tell a missing HAL from an unrunnable one.
 camera_hal_report=/var/lib/androidbox/camera-hal.txt
 audit_camera_hal() {
     local vendor="$preinstalled_images/vendor.img"
     local mount_point="/run/androidbox-hal-audit"
-    local provider="" elf_class="" summary
+    local provider="" elf_class="" summary installed=""
+    if [[ -x $camera_hal_overlay/bin/hw/android.hardware.camera.provider@2.4-external-service ]]; then
+        installed="the AndroidBox external camera provider is installed in the vendor overlay"
+    fi
     if [[ ! -f $vendor ]]; then
         summary="no vendor image installed"
     else
@@ -192,25 +224,30 @@ audit_camera_hal() {
                 elf_class=$(od -An -tu1 -j4 -N1 "$mount_point/bin/hw/$provider" 2>/dev/null |
                             tr -d '[:space:]')
                 if [[ $elf_class == 1 ]]; then
-                    summary="$provider is 32-bit"
+                    summary="the image's own $provider is 32-bit"
                 elif [[ $elf_class == 2 ]]; then
-                    summary="$provider is 64-bit"
+                    summary="the image's own $provider is 64-bit"
                 else
-                    summary="$provider has an unreadable ELF header"
+                    summary="the image's own $provider has an unreadable ELF header"
                 fi
             else
-                summary="the vendor image ships no camera provider"
+                summary="the image ships no camera provider"
             fi
             umount "$mount_point"
         else
             summary="the vendor image could not be mounted for the camera audit"
         fi
     fi
-    printf 'camera HAL: %s\n' "$summary" > "$camera_hal_report"
-    if [[ $summary == *"no camera provider"* || $summary == "no vendor image installed" ]]; then
-        echo "NOTE: $summary, so Android camera apps enumerate no device; the webcam still reaches the Ubuntu layer, where the client preview and http://192.168.240.1:7101/ show it." >&2
-    elif [[ $summary == *"32-bit"* ]]; then
-        echo "NOTE: $summary, which a 64-bit-only guest cannot run, so Android camera apps enumerate no device; the client preview and http://192.168.240.1:7101/ still show the webcam." >&2
+    if [[ -n $installed ]]; then
+        printf 'camera HAL: %s; %s\n' "$installed" "$summary" > "$camera_hal_report"
+        echo "NOTE: $installed." >&2
+    else
+        printf 'camera HAL: %s\n' "$summary" > "$camera_hal_report"
+        if [[ $summary == *"no camera provider"* || $summary == "no vendor image installed" ]]; then
+            echo "NOTE: $summary, so Android camera apps enumerate no device; the webcam still reaches the Ubuntu layer, where the client preview and http://192.168.240.1:7101/ show it." >&2
+        elif [[ $summary == *"32-bit"* ]]; then
+            echo "NOTE: $summary, which a 64-bit-only guest cannot run, so Android camera apps enumerate no device; the client preview and http://192.168.240.1:7101/ still show the webcam." >&2
+        fi
     fi
 }
 audit_camera_hal || echo "WARNING: the camera HAL audit could not run." >&2

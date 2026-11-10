@@ -64,7 +64,23 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs
+          sudo apt-get install -y e2fsprogs unzip
+      - name: Build the external camera provider (aarch64 only)
+        # The arm64_only vendor image ships no camera provider at all, so the
+        # 64-bit replacement is built here once and carried to every build job.
+        # x86_64 keeps the image's own provider, which runs natively.
+        if: matrix.arch == 'aarch64'
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y openjdk-17-jre-headless
+          bash guest/camera-hal/build.sh
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'aarch64'
+        with:
+          name: camera-hal-aarch64
+          path: guest/camera-hal/build/android.hardware.camera.provider@2.4-external-service
+          if-no-files-found: error
+          retention-days: 1
       - name: Build the bundled Android image disk
         run: |
           set -euo pipefail
@@ -156,6 +172,14 @@ jobs:
           pattern: androidbox-images-*
           merge-multiple: true
           path: images
+      - name: Download the external camera provider
+        # Only the aarch64 build has one; the x86_64 guest runs the provider
+        # its own image ships.
+        if: matrix.images == 'aarch64'
+        uses: actions/download-artifact@v4
+        with:
+          name: camera-hal-aarch64
+          path: guest/camera-hal/build
       - name: Select the bundled Android image disk
         shell: bash
         # macOS labels the machine arm64 while the guest disk is named after the

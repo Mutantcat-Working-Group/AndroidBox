@@ -1,3 +1,36 @@
+androidbox (1.0.20261110) unstable; urgency=medium
+
+  * Give the guest a nameserver. The netplan configuration described the NIC
+    but never named a resolver, so a DHCP lease that carried no server list
+    left the Android container resolving nothing: every app reported
+    net::ERR_NAME_NOT_RESOLVED while the Ubuntu support layer's own traffic
+    worked. It now names QEMU's user-mode resolver (10.0.2.3) explicitly and
+    ignores whatever the lease claims, so the container always has DNS.
+
+  * Stop blocking every boot on network-online. The NIC is now marked
+    optional, so a guest whose interface has not come up yet no longer sits
+    at "Job systemd-networkd-wait-online.service/start running" for minutes
+    before anything else can start.
+
+  * Install a camera provider the guest can actually run. The arm64_only
+    Waydroid vendor image ships no provider binary at all - only the
+    external_camera_config.xml and the SELinux label for one - so Android
+    camera apps always reported "No cameras were found". First boot now
+    installs the 64-bit provider built from guest/camera-hal into Waydroid's
+    vendor overlay, together with the VINTF manifest cameraservice needs to
+    find it and the init service that starts it. The binary keeps the name
+    the image's own vendor_file_contexts already labels hal_camera_default_exec.
+
+  * Build that provider in CI. The images job compiles it once for aarch64
+    and hands it to every build job, so the installers carry a provider that
+    matches the guest architecture instead of shipping none.
+
+  * Say which camera case the guest is in. The client's probe now separates a
+    guest that has not rebooted into the new provider from one whose image
+    genuinely has no HAL, instead of reporting one vague failure.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Tue, 10 Nov 2026 00:00:00 +0800
+
 androidbox (1.0.20261109) unstable; urgency=medium
 
   * Split the guest state machine out of the Qt window. What the guest is
