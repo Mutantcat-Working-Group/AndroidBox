@@ -127,7 +127,10 @@ if [[ -z "${AIDL}" ]]; then
     curl -fSL --retry 3 -o "${archive}" \
         "https://dl.google.com/android/repository/build-tools_r${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip" \
         || die "could not download build-tools"
-    (cd "${DEPS_DIR}" && unzip -q -o "${archive}" '*/aidl')
+    # Match the archive's own android-<API>/ prefix explicitly: Linux unzip
+    # does not let "*" cross a "/", so a bare '*/aidl' silently matches nothing
+    # there even though it works on macOS.
+    (cd "${DEPS_DIR}" && unzip -q -o "${archive}" 'android-*/aidl')
     AIDL="$(find_aidl || true)"
     [[ -n "${AIDL}" ]] || die "the build-tools archive has no aidl binary"
 fi
