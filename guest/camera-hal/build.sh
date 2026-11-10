@@ -125,19 +125,29 @@ if [[ -z "${AIDL}" ]]; then
         die "the AIDL compiler is required; set AIDL_COMPILER"
     fi
     log "downloading Android build-tools ${BUILD_TOOLS_VERSION} for ${HOST_TAG%%-*}"
-    mkdir -p "${DEPS_DIR}"
+    mkdir -p "${DEPS_DIR}/build-tools"
     archive="${DEPS_DIR}/build-tools-${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip"
     curl -fSL --retry 3 -o "${archive}" \
         "https://dl.google.com/android/repository/build-tools_r${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip" \
         || die "could not download build-tools"
-    # Match the archive's own android-<API>/ prefix explicitly: Linux unzip
-    # does not let "*" cross a "/", so a bare '*/aidl' silently matches nothing
-    # there even though it works on macOS.
-    (cd "${DEPS_DIR}" && unzip -q -o "${archive}" 'android-*/aidl')
+    # Unpack into build-tools/, which is where find_aidl looks. The whole
+    # android-<API>/ tree comes out, not just the compiler: aidl links against
+    # libc++.so from the archive's own lib64/, and without it every run fails
+    # with "error while loading shared libraries". The prefix is matched
+    # explicitly because Linux unzip does not let "*" cross a "/", so a bare
+    # '*/aidl' silently matches nothing there even though it works on macOS.
+    (cd "${DEPS_DIR}/build-tools" && unzip -q -o "${archive}" 'android-*/*')
     AIDL="$(find_aidl || true)"
     [[ -n "${AIDL}" ]] || die "the build-tools archive has no aidl binary"
 fi
 log "using AIDL ${AIDL}"
+
+# aidl links against libraries that sit beside it in the build-tools archive
+# (libc++.so in lib64/), and the loader does not search there on its own.
+aidl_library_dir="$(cd "$(dirname "${AIDL}")/.." 2>/dev/null && pwd)/lib64"
+if [[ -d "${aidl_library_dir}" ]]; then
+    export LD_LIBRARY_PATH="${aidl_library_dir}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
 
 # ------------------------------------------------------------------ generation
 # aidl writes the NDK backend output under a leading "aidl" path and the plain
