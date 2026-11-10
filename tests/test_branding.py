@@ -133,6 +133,16 @@ class BrandingTests(unittest.TestCase):
         self.assertIn("/var/lib/androidbox/overlay/vendor", provision)
         self.assertIn("bin/hw", provision)
         self.assertIn("etc/vintf/manifest", provision)
+
+    def test_guest_finds_the_provider_without_an_executable_bit(self):
+        # The binary rides inside the seed payload and PyInstaller stores it
+        # mode 0644, so an -x test on the source would skip the install and
+        # leave every Android camera app still seeing nothing.
+        provision = source(ROOT / "guest/provision.sh")
+        self.assertIn('[[ ! -f $camera_hal_source ]]', provision)
+        self.assertNotIn('[[ ! -x $camera_hal_source ]]', provision)
+        # The copy that lands in the guest does have to be executable.
+        self.assertIn('install -m 0755 "$camera_hal_source"', provision)
         self.assertIn("etc/init", provision)
 
     def test_camera_provider_uses_the_name_the_image_labels(self):

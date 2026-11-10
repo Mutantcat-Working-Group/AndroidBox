@@ -185,7 +185,10 @@ androidbox init
 camera_hal_source="$source_dir/guest/camera-hal/build/android.hardware.camera.provider@2.4-external-service"
 camera_hal_overlay=/var/lib/androidbox/overlay/vendor
 install_camera_hal() {
-    if [[ ! -x $camera_hal_source ]]; then
+    # Test for the file, not for its executable bit: the binary travels inside
+    # the seed payload and PyInstaller stores it without one, and `install -m
+    # 0755` below is what makes it executable in the guest.
+    if [[ ! -f $camera_hal_source ]]; then
         echo "NOTE: no camera provider binary was built for this guest; Android camera apps will enumerate no device. The webcam still reaches the Ubuntu layer, where the client preview and http://192.168.240.1:7101/ show it." >&2
         return 0
     fi
