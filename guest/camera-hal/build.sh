@@ -160,7 +160,9 @@ rm -rf "${GEN_DIR}"
 mkdir -p "${GEN_DIR}/aidl"
 
 # Word splitting is safe here: every path under aidl/ is ASCII without spaces.
-set -- $(find "${AIDL_ROOT}" -name '*.aidl' | sort)
+# AppleDouble companions ("._Name.aidl") are skipped: they are resource-fork
+# metadata, not AIDL, and aidl reports them as an unrecognized character.
+set -- $(find "${AIDL_ROOT}" -name '*.aidl' ! -name '._*' | sort)
 [[ $# -gt 0 ]] || die "no AIDL sources under ${AIDL_ROOT}"
 
 log "generating stable AIDL stubs for $# AIDL files"
