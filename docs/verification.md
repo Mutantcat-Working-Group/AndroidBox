@@ -87,6 +87,26 @@ Camera HAL evidence (live check, 2026-10-22):
   http://192.168.240.1:7101/ show it, and `guest/provision.sh` records which
   case the installed vendor image is in `/var/lib/androidbox/camera-hal.txt`.
 
+Camera HAL replacement (2026-11-10):
+
+- The 2026-10-22 `waydroid_arm64_only` vendor image was downloaded and
+  inspected directly: it carries `etc/external_camera_config.xml` and the
+  `hal_camera_default_exec` label for a provider, and still no provider
+  binary under `bin/hw`. The conclusion above therefore holds for the image
+  itself, not just for the 2026-04-03 build.
+- `guest/camera-hal/build.sh` was run end to end on Linux/x86_64 (Debian
+  stable container, NDK r26c, build-tools 33.0.2): 81 AIDL interfaces
+  generated, 90 translation units compiled and linked into
+  `android.hardware.camera.provider@2.4-external-service`, reported by `file`
+  as `ELF 64-bit LSB pie executable, ARM aarch64, ... for Android 33`.
+- The CI `images (aarch64)` job builds the same binary and the installer jobs
+  carry it; the release assets for 1.0.20261110 were produced from that run.
+- **Not yet verified:** whether Android's cameraservice actually enumerates
+  the device once the provider is installed, because no guest has been booted
+  against this build yet. The install path, VINTF declaration and init service
+  are in place and were checked statically; enumeration in a live guest is the
+  first thing to confirm.
+
 Passed in the source Qt application:
 
 - Linux boot, Binder module loading, LXC container startup, Android
