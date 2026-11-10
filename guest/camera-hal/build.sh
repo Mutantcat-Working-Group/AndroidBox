@@ -30,7 +30,10 @@ BUILD_TOOLS_VERSION="33.0.2"
 API_LEVEL="33"
 TRIPLE="aarch64-linux-android33"
 
-log() { printf '[camera-hal] %s\n' "$*"; }
+# Both helpers write to stderr: find_ndk and find_aidl are called inside
+# command substitutions, and a log line on stdout would end up inside the
+# returned path.
+log() { printf '[camera-hal] %s\n' "$*" >&2; }
 die() { printf '[camera-hal] %s\n' "$*" >&2; exit 1; }
 
 HOST_OS="$(uname -s)"
