@@ -97,9 +97,14 @@ find_aidl() {
         echo "${AIDL_COMPILER}"
         return 0
     fi
-    if [[ -x "${DEPS_DIR}/build-tools/${HOST_TAG%%-*}/aidl" ]]; then
-        echo "${DEPS_DIR}/build-tools/${HOST_TAG%%-*}/aidl"
-        return 0
+    # The build-tools archive unpacks to android-<API>/, not to a host name, so
+    # the cached copy is found by searching rather than by a fixed path.
+    if [[ -d "${DEPS_DIR}/build-tools" ]]; then
+        candidate="$(find "${DEPS_DIR}/build-tools" -maxdepth 2 -type f -name aidl -perm -u+x 2>/dev/null | head -1)"
+        if [[ -n "${candidate}" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
     fi
     for candidate in "${HOME}/Library/Android/sdk/build-tools"/* "${HOME}/Android/Sdk/build-tools"/* \
                      /opt/android-sdk/build-tools/*; do
@@ -120,7 +125,7 @@ if [[ -z "${AIDL}" ]]; then
     mkdir -p "${DEPS_DIR}"
     archive="${DEPS_DIR}/build-tools-${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip"
     curl -fSL --retry 3 -o "${archive}" \
-        "https://dl.google.com/android/repository/build-tools_${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip" \
+        "https://dl.google.com/android/repository/build-tools_r${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip" \
         || die "could not download build-tools"
     (cd "${DEPS_DIR}" && unzip -q -o "${archive}" '*/aidl')
     AIDL="$(find_aidl || true)"
