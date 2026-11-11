@@ -1,3 +1,18 @@
+androidbox (1.0.20261111) unstable; urgency=medium
+
+  * Install the camera provider in installers. install_camera_hal tested the
+    source binary with -x before copying it, but the binary travels inside the
+    seed payload and PyInstaller stores bundled files mode 0644, so the test
+    failed for every real installer and the provider was never copied into the
+    vendor overlay. Android therefore kept reporting no cameras in
+    1.0.20261110 even though the binary was in the package. The function now
+    looks for the file and lets `install -m 0755` set the mode in the guest.
+
+  * Record in the verification notes what the camera work did and did not
+    prove, including that enumeration in a live guest is still untested.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Wed, 11 Nov 2026 00:00:00 +0800
+
 androidbox (1.0.20261110) unstable; urgency=medium
 
   * Give the guest a nameserver. The netplan configuration described the NIC

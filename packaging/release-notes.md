@@ -1,3 +1,24 @@
+## AndroidBox 1.0.20261111
+
+This release fixes the camera provider so installers actually deploy it.
+
+1.0.20261110 shipped the 64-bit camera provider inside every installer, but
+the guest never copied it into the vendor overlay: the install step tested the
+bundled binary with `-x` before copying, and PyInstaller stores bundled files
+without an executable bit, so the test failed for every real installer and the
+step took its "no camera provider was built" branch. Android therefore still
+answered "No cameras were found". The step now checks that the file exists and
+lets `install -m 0755` set the mode in the guest, which is what actually needs
+to be executable.
+
+The networking fixes from 1.0.20261110 are unchanged and were working: the
+guest names QEMU's user-mode resolver explicitly so the Android container
+always has DNS, and the network interface is optional so a boot no longer
+waits minutes for `systemd-networkd-wait-online`.
+
+Enumeration of the camera device in a live guest is still untested; the
+verification notes record what was and was not proven.
+
 ## AndroidBox 1.0.20261110
 
 The guest now has working DNS and a camera Android can actually open.
