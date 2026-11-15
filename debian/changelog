@@ -1,3 +1,22 @@
+androidbox (1.0.20261116) unstable; urgency=medium
+
+  * Rebuild the guest seed when its payload changes, not just when the
+    application version changes. ensure_seed compared only the version, so an
+    installer that gained a file while keeping the same version number - which
+    is what happened when the camera provider was added - left the previous
+    seed in place. The guest then provisioned from a payload without the
+    provider and Android kept reporting no cameras, even though the installed
+    application contained the binary. The seed's version file now carries a
+    fingerprint of the payload and the instance-id includes it, so cloud-init
+    re-runs for a new payload.
+
+  * Keep spaces out of the seed's marker and instance-id. The fingerprint was
+    joined to the version with a space, which put a space into the systemd
+    unit's ConditionPathExists= list and into the provisioned marker file name.
+    Both use a dash now.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Mon, 16 Nov 2026 00:00:00 +0800
+
 androidbox (1.0.20261111) unstable; urgency=medium
 
   * Install the camera provider in installers. install_camera_hal tested the

@@ -1,3 +1,30 @@
+## AndroidBox 1.0.20261116
+
+This release fixes why the camera provider still did not reach guests that
+upgraded from an earlier build.
+
+1.0.20261111 shipped the 64-bit provider inside every installer, but the guest
+never received it whenever the disk had been provisioned before: the seed
+refresh compared only the application version, so a new installer carrying the
+same version number but a different payload - one that now included the
+provider - was treated as already current. The old seed stayed on disk, the
+guest provisioned from a payload without the provider, and Android kept
+answering "No cameras were found" while the installed application contained
+the binary all along.
+
+The seed now records a fingerprint of its payload alongside the version, so any
+change to the payload rebuilds it, and the instance-id carries that fingerprint
+so cloud-init re-runs its per-instance modules. Existing disks pick this up on
+the next start.
+
+The networking fixes from 1.0.20261110 remain: the guest names QEMU's user-mode
+resolver explicitly so the Android container always has DNS, and the network
+interface is optional so a boot no longer waits minutes for
+`systemd-networkd-wait-online`.
+
+Enumeration of the camera device in a live guest is still unverified; the
+verification notes record what was and was not proven.
+
 ## AndroidBox 1.0.20261111
 
 This release fixes the camera provider so installers actually deploy it.
