@@ -26,10 +26,14 @@ class SeedTests(unittest.TestCase):
                                          "NETWORK-CONFIG",
                                          seed.PAYLOAD_ARCHIVE.upper(),
                                          seed.VERSION_FILE.upper()})
-            self.assertEqual(seed.seed_version(path), seed.__version__)
+            # The version line also carries a payload fingerprint, so two
+            # builds that share a version number are still told apart.
+            stamp = seed.seed_version(path)
+            self.assertTrue(stamp.startswith(f"{seed.__version__} "), stamp)
+            self.assertEqual(seed.seed_matches(path, "x86_64"), True)
             # The instance-id carries the seed version so cloud-init re-runs
             # its per-instance modules whenever the seed changes.
-            self.assertIn(f"instance-id: androidbox-x86_64-{seed.__version__}",
+            self.assertIn(f"instance-id: androidbox-x86_64-{stamp.replace(' ', '-')}",
                           files["META-DATA"].decode("utf-8"))
             user_data = files["USER-DATA"].decode("utf-8")
             self.assertIn("#cloud-config", user_data)
@@ -106,9 +110,34 @@ class SeedTests(unittest.TestCase):
             second = seed.ensure_seed(path, "aarch64")
             self.assertEqual(first, second)
             seed.write_seed(path, "aarch64", version="1.0.0")
-            self.assertEqual(seed.seed_version(path), "1.0.0")
+            self.assertTrue(seed.seed_version(path).startswith("1.0.0 "))
             refreshed = seed.ensure_seed(path, "aarch64")
-            self.assertEqual(seed.seed_version(refreshed), seed.__version__)
+            self.assertTrue(seed.seed_version(refreshed).startswith(f"{seed.__version__} "))
+
+    def test_ensure_seed_refreshes_a_same_version_seed_with_a_different_payload(self):
+        # This is the failure that shipped: an installer and a guest disk could
+        # carry the same version number while the payload differed - one had
+        # the camera provider, the other did not - and the seed was trusted as
+        # current, so the provider never reached the guest.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "payload"
+            (root / "guest").mkdir(parents=True)
+            (root / "Makefile").write_text("all:\n", encoding="utf-8")
+            for entry in ("androidbox.py", "androidbox", "data", "tools",
+                          "dbus", "systemd"):
+                (root / entry).mkdir()
+            (root / "guest" / "provision.sh").write_text("echo old\n", encoding="utf-8")
+
+            path = Path(directory) / "androidbox-aarch64-seed.iso"
+            seed.write_seed(path, "aarch64", root=root)
+            self.assertTrue(seed.seed_matches(path, "aarch64", root=root))
+
+            # Same application version, different payload.
+            (root / "guest" / "provision.sh").write_text("echo new\n", encoding="utf-8")
+            self.assertFalse(seed.seed_matches(path, "aarch64", root=root))
+
+            refreshed = seed.ensure_seed(path, "aarch64", root=root)
+            self.assertTrue(seed.seed_matches(refreshed, "aarch64", root=root))
 
     def test_read_iso_rejects_garbage(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -14,6 +14,7 @@ macOS and Linux.
 
 from pathlib import Path
 import gzip
+import hashlib
 import io
 import struct
 import sys
@@ -59,9 +60,14 @@ def meta_data(arch, version=None):
     instance-id changes. A version-less id keeps the old, possibly broken
     first-boot result frozen on disks that have booted before, so every seed
     refresh restarts the cloud-init sequence.
+
+    The version may carry a payload fingerprint after a space; instance-id is a
+    single YAML scalar, so the space becomes a dash rather than splitting the
+    line.
     """
     version = version or __version__
-    return f"instance-id: androidbox-{arch}-{version}\nlocal-hostname: androidbox\n"
+    identifier = version.replace(" ", "-")
+    return f"instance-id: androidbox-{arch}-{identifier}\nlocal-hostname: androidbox\n"
 
 
 def network_config():
@@ -332,28 +338,62 @@ def write_payload_archive(target, root=None):
 
 
 def write_seed(path, arch, version=None, root=None):
-    """Write the NoCloud seed for a guest disk and return its path."""
+    """Write the NoCloud seed for a guest disk and return its path.
+
+    The version file carries a fingerprint of the payload, not just the
+    application version: two builds can share a version number while carrying
+    different contents - the camera provider is built into the payload, and an
+    installer produced before it existed would otherwise be trusted as current
+    and leave the guest without the binary it needs.
+    """
     path = Path(path)
     version = version or __version__
     with tempfile.TemporaryDirectory(prefix="androidbox-seed-") as directory:
         archive = write_payload_archive(Path(directory) / PAYLOAD_ARCHIVE, root)
         payload = archive.read_bytes()
+    # A frozen bundle pins noVNC and the whole guest tree into the payload, so
+    # hashing it is what tells one build from another. The short form is what
+    # the guest embeds in its *provisioned* marker file name, so it is kept to
+    # hex digits and no spaces.
+    fingerprint = hashlib.sha256(payload).hexdigest()[:12]
+    stamp = f"{version} {fingerprint}"
     write_iso(path, [
-        ("meta-data", meta_data(arch, version).encode("utf-8")),
+        ("meta-data", meta_data(arch, stamp).encode("utf-8")),
         ("user-data", user_data(version).encode("utf-8")),
         ("network-config", network_config().encode("utf-8")),
         (PAYLOAD_ARCHIVE, payload),
-        (VERSION_FILE, f"{version}\n".encode("utf-8")),
+        (VERSION_FILE, f"{stamp}\n".encode("utf-8")),
     ])
     return path
 
 
 def ensure_seed(path, arch, root=None):
-    """Write the seed unless a seed for this application version exists."""
+    """Write the seed unless a seed for this exact build already exists."""
     path = Path(path)
-    if path.is_file() and seed_version(path) == __version__:
+    if path.is_file() and seed_matches(path, arch, root=root):
         return path
     return write_seed(path, arch, root=root)
+
+
+def payload_fingerprint(root=None):
+    """Return the fingerprint a seed written for this build would carry."""
+    with tempfile.TemporaryDirectory(prefix="androidbox-seed-") as directory:
+        archive = write_payload_archive(Path(directory) / PAYLOAD_ARCHIVE, root)
+        return archive.read_bytes()
+
+
+def seed_matches(path, arch, root=None):
+    """Return True when the seed was built from this exact payload and version.
+
+    Comparing the version alone is not enough: an installer produced with the
+    same version number but a different payload - one that predates the camera
+    provider, say - would be accepted and never regenerated.
+    """
+    stamp = seed_version(path)
+    if not stamp or not stamp.startswith(f"{__version__} "):
+        return False
+    recorded = stamp.split(" ", 1)[1]
+    return recorded == hashlib.sha256(payload_fingerprint(root)).hexdigest()[:12]
 
 
 def _record_length(identifier):
