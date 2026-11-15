@@ -60,14 +60,9 @@ def meta_data(arch, version=None):
     instance-id changes. A version-less id keeps the old, possibly broken
     first-boot result frozen on disks that have booted before, so every seed
     refresh restarts the cloud-init sequence.
-
-    The version may carry a payload fingerprint after a space; instance-id is a
-    single YAML scalar, so the space becomes a dash rather than splitting the
-    line.
     """
     version = version or __version__
-    identifier = version.replace(" ", "-")
-    return f"instance-id: androidbox-{arch}-{identifier}\nlocal-hostname: androidbox\n"
+    return f"instance-id: androidbox-{arch}-{version}\nlocal-hostname: androidbox\n"
 
 
 def network_config():
@@ -356,7 +351,7 @@ def write_seed(path, arch, version=None, root=None):
     # the guest embeds in its *provisioned* marker file name, so it is kept to
     # hex digits and no spaces.
     fingerprint = hashlib.sha256(payload).hexdigest()[:12]
-    stamp = f"{version} {fingerprint}"
+    stamp = f"{version}-{fingerprint}"
     write_iso(path, [
         ("meta-data", meta_data(arch, stamp).encode("utf-8")),
         ("user-data", user_data(version).encode("utf-8")),
@@ -390,9 +385,9 @@ def seed_matches(path, arch, root=None):
     provider, say - would be accepted and never regenerated.
     """
     stamp = seed_version(path)
-    if not stamp or not stamp.startswith(f"{__version__} "):
+    if not stamp or not stamp.startswith(f"{__version__}-"):
         return False
-    recorded = stamp.split(" ", 1)[1]
+    recorded = stamp.split("-", 1)[1]
     return recorded == hashlib.sha256(payload_fingerprint(root)).hexdigest()[:12]
 
 

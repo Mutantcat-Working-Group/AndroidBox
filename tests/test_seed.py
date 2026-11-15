@@ -29,11 +29,11 @@ class SeedTests(unittest.TestCase):
             # The version line also carries a payload fingerprint, so two
             # builds that share a version number are still told apart.
             stamp = seed.seed_version(path)
-            self.assertTrue(stamp.startswith(f"{seed.__version__} "), stamp)
+            self.assertTrue(stamp.startswith(f"{seed.__version__}-"), stamp)
             self.assertEqual(seed.seed_matches(path, "x86_64"), True)
             # The instance-id carries the seed version so cloud-init re-runs
             # its per-instance modules whenever the seed changes.
-            self.assertIn(f"instance-id: androidbox-x86_64-{stamp.replace(' ', '-')}",
+            self.assertIn(f"instance-id: androidbox-x86_64-{stamp}",
                           files["META-DATA"].decode("utf-8"))
             user_data = files["USER-DATA"].decode("utf-8")
             self.assertIn("#cloud-config", user_data)
@@ -110,9 +110,9 @@ class SeedTests(unittest.TestCase):
             second = seed.ensure_seed(path, "aarch64")
             self.assertEqual(first, second)
             seed.write_seed(path, "aarch64", version="1.0.0")
-            self.assertTrue(seed.seed_version(path).startswith("1.0.0 "))
+            self.assertTrue(seed.seed_version(path).startswith("1.0.0-"))
             refreshed = seed.ensure_seed(path, "aarch64")
-            self.assertTrue(seed.seed_version(refreshed).startswith(f"{seed.__version__} "))
+            self.assertTrue(seed.seed_version(refreshed).startswith(f"{seed.__version__}-"))
 
     def test_ensure_seed_refreshes_a_same_version_seed_with_a_different_payload(self):
         # This is the failure that shipped: an installer and a guest disk could
