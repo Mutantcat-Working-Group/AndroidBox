@@ -399,6 +399,7 @@ class MainWindow(QMainWindow):
         self.session.started.connect(self.on_started)
         self.session.stopped.connect(self.on_stopped)
         self.session.prepared.connect(self.on_prepared)
+        self.session.installed.connect(self.on_installed)
         self.session.failed.connect(self.on_failed)
         self.session.restarting.connect(self.on_restarting)
         self.session.prepare_progress.connect(self.on_prepare_progress)
@@ -646,6 +647,18 @@ class MainWindow(QMainWindow):
 
     def on_prepared(self, disk):
         self.empty_status.setText("Guest disk ready")
+
+    def on_installed(self, info):
+        """Offer to start the app that was just installed."""
+        self.report(f"Installed {info.label} ({info.package})")
+        answer = QMessageBox.question(
+            self, APP_NAME, f"{info.label} is installed. Start it now?")
+        if answer == QMessageBox.StandardButton.Yes:
+            self.start_app(info.package)
+
+    def start_app(self, package):
+        if not self.session.launch_app(package):
+            self.report("Start the guest before launching an app")
 
     def on_failed(self, summary, error, operation):
         self.report(str(error))

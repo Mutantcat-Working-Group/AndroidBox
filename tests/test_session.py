@@ -270,7 +270,36 @@ class OperationTests(SessionFixture):
         with patch("androidbox.session.adb_install_apk", return_value="Success") as install:
             session.install_apk("adb", "/tmp/app.apk")
             session.poll()
-        self.assertEqual(install.call_args.args, ("adb", "127.0.0.1:5555", "/tmp/app.apk"))
+        self.assertEqual(install.call_args.args[0], "adb")
+        self.assertEqual(install.call_args.args[1], "127.0.0.1:5555")
+        self.assertEqual(install.call_args.args[2], "/tmp/app.apk")
+
+    def test_a_launch_trims_background_apps_and_starts_the_package(self):
+        session = self.session()
+        self.start(session)
+        launched = []
+        with patch("androidbox.session.apps.trim_background", return_value=["com.other"]) as trim, \
+                patch("androidbox.session.apps.enable_freeform", return_value=True), \
+                patch("androidbox.session.apps.launch", side_effect=lambda *a, **k: launched.append(a)):
+            self.assertTrue(session.launch_app("com.example.app"))
+            session.poll()
+        trim.assert_called_once()
+        self.assertEqual(trim.call_args.kwargs["keep"], {"com.example.app"})
+        self.assertEqual(launched[0][2], "com.example.app")
+
+    def test_a_launch_is_refused_while_the_guest_is_stopped(self):
+        session = self.session()
+        self.assertFalse(session.launch_app("com.example.app"))
+        self.assertIsNone(session.future)
+
+    def test_a_shutdown_idles_android_before_powering_off(self):
+        session = self.session()
+        self.start(session)
+        with patch.object(session, "idle_apps") as idle:
+            session.stop()
+            session.poll()
+        idle.assert_called_once()
+        self.assertTrue(session.vm.shutdown_called)
 
 
 class LogTests(SessionFixture):

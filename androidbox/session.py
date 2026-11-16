@@ -21,10 +21,11 @@ import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from . import guestdisk, runtime, seed
+from . import apps, guestdisk, runtime, seed
 from .adb import executable as adb_executable
 from .adb import install_apk as adb_install_apk
 from .adb import transfer_files
+from .apkmeta import ApkReadError, read_apk
 from .camera import CameraStreamer
 from .display import DisplayServer
 
@@ -47,6 +48,8 @@ class GuestSession(QObject):
     started = Signal(str)
     stopped = Signal(int)
     prepared = Signal(str)
+    # Carries an ApkInfo: the package, label and icon just installed.
+    installed = Signal(object)
     failed = Signal(str, object, str)
     restarting = Signal(int, int)
     prepare_progress = Signal(int, int)
@@ -65,6 +68,8 @@ class GuestSession(QObject):
         self.restarts = 0
         self.recovering = False
         self.pending_notes = []
+        # What the last APK install read out of the archive, for the window.
+        self.last_installed = None
         self.log_offset = 0
         self.log_path = runtime.state_directory() / "qemu.log"
         self.server = None
@@ -161,19 +166,80 @@ class GuestSession(QObject):
             raise
 
     def stop(self, force=False):
-        """Ask QEMU for a clean shutdown, or terminate it when forced."""
+        """Ask QEMU for a clean shutdown, or terminate it when forced.
+
+        A graceful shutdown first tells Android to stop every app and go idle:
+        QEMU's own ACPI powerdown then reaches a guest with nothing writing to
+        the disk, which is what makes the next start quick and keeps the disk
+        consistent.
+        """
         self.restarts = 0
-        operation = self.vm.terminate if force else self.vm.shutdown
+        operation = self.vm.terminate if force else self._idle_then_shutdown
         self.operation = "stop"
         self.future = self.pool.submit(operation)
         self.shutdown_requested = True
         self.changed.emit()
 
+    def _idle_then_shutdown(self):
+        self.idle_apps()
+        self.vm.shutdown()
+
     def install_apk(self, adb, path):
+        """Install an APK, then optionally start it in a window of its own.
+
+        The package name and label are read from the archive before installing
+        so the caller can offer to launch the app, and so a failure names the
+        app rather than the file it came from.
+        """
+        try:
+            info = read_apk(path)
+        except (ApkReadError, OSError, ValueError):
+            info = None
+        self.last_installed = info
         self.operation = "install"
-        self.future = self.pool.submit(adb_install_apk, adb, self.adb_target(), path)
+        self.future = self.pool.submit(self._install_and_report, adb, path, info)
         self.message.emit("Waiting for Android authorization / installing APK")
         self.changed.emit()
+
+    def _install_and_report(self, adb, path, info):
+        summary = adb_install_apk(adb, self.adb_target(), path)
+        if info is not None:
+            return f"{info.label} ({info.package}) installed"
+        return summary
+
+    def launch_app(self, package):
+        """Start an app in its own window and stop whatever the user left behind."""
+        if self.busy or not self.vm.running:
+            return False
+        adb = adb_executable()
+        if not adb:
+            self.failed.emit("Cannot start the app", RuntimeError("ADB was not found"),
+                             "launch")
+            return False
+        self.operation = "launch"
+        self.future = self.pool.submit(self._launch_app, adb, package)
+        self.message.emit(f"Starting {package}")
+        self.changed.emit()
+        return True
+
+    def _launch_app(self, adb, package):
+        target = self.adb_target()
+        # A guest with a few GB of RAM cannot keep every app it ever opened
+        # alive, and the ones left behind are what push a later launch into
+        # memory pressure. They are stopped before the new one starts.
+        stopped = apps.trim_background(adb, target, keep={package})
+        if stopped:
+            self.message.emit(f"Stopped {len(stopped)} background app(s) to make room")
+        apps.enable_freeform(adb, target)
+        return apps.launch(adb, target, package, freeform=True)
+
+    def idle_apps(self):
+        """Put Android back to sleep once nothing is in front."""
+        adb = adb_executable()
+        if not adb or not self.vm.running:
+            return
+        target = self.adb_target()
+        apps.idle(adb, target)
 
     def upload(self, paths, adb):
         self.operation = "upload"
@@ -251,6 +317,14 @@ class GuestSession(QObject):
             self.message.emit("Shutdown requested" if self.vm.running else "Stopped")
         elif operation == "prepare":
             self._store_prepared(Path(result))
+        elif operation == "install":
+            self.message.emit(result or "Installed")
+            # Installing an APK is almost always followed by wanting to use
+            # it, so a fresh install is offered for launch straight away.
+            if self.last_installed is not None:
+                self.installed.emit(self.last_installed)
+        elif operation == "launch":
+            self.message.emit(result or "Started")
         else:
             self.message.emit(result or "Done")
 
