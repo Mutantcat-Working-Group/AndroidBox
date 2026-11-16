@@ -274,6 +274,28 @@ class OperationTests(SessionFixture):
         self.assertEqual(install.call_args.args[1], "127.0.0.1:5555")
         self.assertEqual(install.call_args.args[2], "/tmp/app.apk")
 
+    def test_a_dropped_apk_is_offered_for_launch_like_an_installed_one(self):
+        session = self.session()
+        self.start(session)
+        offered = []
+        session.installed.connect(offered.append)
+        info = SimpleNamespace(package="com.example.dropped", label="Dropped", icon=b"")
+        with patch("androidbox.session.read_apk", return_value=info), \
+                patch("androidbox.session.transfer_files", return_value="Uploaded 1 file(s)"):
+            session.upload(["/tmp/dropped.apk"], "adb")
+            session.poll()
+        self.assertEqual([item.package for item in offered], ["com.example.dropped"])
+
+    def test_a_batch_without_an_apk_offers_nothing(self):
+        session = self.session()
+        self.start(session)
+        offered = []
+        session.installed.connect(offered.append)
+        with patch("androidbox.session.transfer_files", return_value="Uploaded 1 file(s)"):
+            session.upload(["/tmp/notes.txt"], "adb")
+            session.poll()
+        self.assertEqual(offered, [])
+
     def test_a_launch_trims_background_apps_and_starts_the_package(self):
         session = self.session()
         self.start(session)

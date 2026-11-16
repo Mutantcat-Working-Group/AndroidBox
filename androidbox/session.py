@@ -242,11 +242,29 @@ class GuestSession(QObject):
         apps.idle(adb, target)
 
     def upload(self, paths, adb):
+        """Copy files into the guest, installing any APK among them.
+
+        A dropped APK is installed by the transfer itself, so the metadata is
+        read here as well and the same offer to launch follows as for the
+        toolbar's install action.
+        """
+        apks = [Path(path) for path in paths if str(path).lower().endswith(".apk")]
+        infos = []
+        for path in apks:
+            try:
+                infos.append(read_apk(path))
+            except (ApkReadError, OSError, ValueError):
+                continue
+        self.last_installed = infos[-1] if infos else None
         self.operation = "upload"
-        self.future = self.pool.submit(transfer_files, adb, self.adb_target(), paths,
-                                       progress=self.transfer_progress.emit)
+        self.future = self.pool.submit(self._upload_and_report, adb, paths)
         self.message.emit(f"Uploading {len(paths)} file(s) to the guest Download directory")
         self.changed.emit()
+
+    def _upload_and_report(self, adb, paths):
+        summary = transfer_files(adb, self.adb_target(), paths,
+                                 progress=self.transfer_progress.emit)
+        return summary
 
     def adb_target(self):
         return f"127.0.0.1:{self.vm.adb_port}"
@@ -325,6 +343,10 @@ class GuestSession(QObject):
                 self.installed.emit(self.last_installed)
         elif operation == "launch":
             self.message.emit(result or "Started")
+        elif operation == "upload":
+            self.message.emit(result or "Uploaded")
+            if self.last_installed is not None:
+                self.installed.emit(self.last_installed)
         else:
             self.message.emit(result or "Done")
 
