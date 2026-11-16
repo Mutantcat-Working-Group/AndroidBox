@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 from PySide6.QtCore import QLockFile, QSize, Qt, QUrl
-from PySide6.QtGui import QAction, QIcon, QPalette
+from PySide6.QtGui import QAction, QIcon, QPalette, QPixmap
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
@@ -651,9 +651,16 @@ class MainWindow(QMainWindow):
     def on_installed(self, info):
         """Offer to start the app that was just installed."""
         self.report(f"Installed {info.label} ({info.package})")
-        answer = QMessageBox.question(
-            self, APP_NAME, f"{info.label} is installed. Start it now?")
-        if answer == QMessageBox.StandardButton.Yes:
+        box = QMessageBox(self)
+        box.setWindowTitle(APP_NAME)
+        box.setText(f"{info.label} is installed. Start it now?")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if info.icon:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(info.icon):
+                box.setIconPixmap(pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
+                                                Qt.TransformationMode.SmoothTransformation))
+        if box.exec() == QMessageBox.StandardButton.Yes:
             self.start_app(info.package)
 
     def start_app(self, package):

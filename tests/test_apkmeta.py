@@ -227,6 +227,21 @@ class ApkReaderTests(unittest.TestCase):
         with self.assertRaises(apkmeta.ApkReadError):
             apkmeta.read_apk(path)
 
+    def test_the_icon_bytes_ride_along_with_the_metadata(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "icon.apk"
+        png = b"\x89PNG\r\n\x1a\n" + b"\0" * 32
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("AndroidManifest.xml", manifest_axml(
+                "com.example.test", "TestApp", "res/icon.png"))
+            archive.writestr("res/icon.png", png)
+        self.assertEqual(apkmeta.read_apk(path).icon, png)
+
+    def test_a_missing_icon_leaves_the_bytes_empty(self):
+        path = self.build(manifest=manifest_axml("com.example.test", "T", "res/missing.png"))
+        self.assertEqual(apkmeta.read_apk(path).icon, b"")
+
     def test_extract_icon_returns_the_archive_bytes(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

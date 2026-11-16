@@ -313,19 +313,24 @@ class ResourceTable:
 
 
 class ApkInfo:
-    """What a launcher needs to show an app: its package, label and icon."""
+    """What a launcher needs to show an app: its package, label and icon.
 
-    __slots__ = ("package", "label", "icon_path", "launcher_activity")
+    ``icon`` is the icon's bytes, read in the same pass as everything else so
+    a caller that wants to draw it does not reopen the archive.
+    """
 
-    def __init__(self, package, label, icon_path, launcher_activity):
+    __slots__ = ("package", "label", "icon_path", "launcher_activity", "icon")
+
+    def __init__(self, package, label, icon_path, launcher_activity, icon=b""):
         self.package = package
         self.label = label
         self.icon_path = icon_path
         self.launcher_activity = launcher_activity
+        self.icon = icon
 
     def __repr__(self):
         return (f"ApkInfo(package={self.package!r}, label={self.label!r}, "
-                f"icon={self.icon_path!r})")
+                f"icon={self.icon_path!r}, {len(self.icon)} icon bytes)")
 
 
 def read_apk(path):
@@ -382,11 +387,20 @@ def read_apk(path):
                              else own.value) or label
                     break
 
+        # Read the icon only once its path is final: an icon named through a
+        # resource reference is not known until the table has been consulted.
+        icon_bytes = b""
+        if icon and not icon.startswith("@"):
+            try:
+                icon_bytes = archive.read(icon)
+            except KeyError:
+                icon_bytes = b""
+
     if isinstance(label, str) and label.startswith("@"):
         label = ""
     if isinstance(icon, str) and icon.startswith("@"):
         icon = ""
-    return ApkInfo(package, label or package, icon or "", launcher or "")
+    return ApkInfo(package, label or package, icon or "", launcher or "", icon_bytes)
 
 
 def extract_icon(path, icon_path):
