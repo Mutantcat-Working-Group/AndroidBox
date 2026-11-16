@@ -300,7 +300,8 @@ class OperationTests(SessionFixture):
         session = self.session()
         self.start(session)
         launched = []
-        with patch("androidbox.session.apps.trim_background", return_value=["com.other"]) as trim, \
+        with patch("androidbox.session.adb_executable", return_value="adb"), \
+                patch("androidbox.session.apps.trim_background", return_value=["com.other"]) as trim, \
                 patch("androidbox.session.apps.enable_freeform", return_value=True), \
                 patch("androidbox.session.apps.launch", side_effect=lambda *a, **k: launched.append(a)):
             self.assertTrue(session.launch_app("com.example.app"))
