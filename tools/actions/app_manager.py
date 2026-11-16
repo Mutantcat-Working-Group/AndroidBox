@@ -79,12 +79,12 @@ def launch(args):
             platformService.launchApp(args.PACKAGE)
             multiwin = platformService.getprop(
                 "persist.waydroid.multi_windows", "false")
-            if multiwin == "false":
-                platformService.settingsPutString(
-                    2, "policy_control", "immersive.status=*")
-            else:
-                platformService.settingsPutString(
-                    2, "policy_control", "immersive.full=*")
+            # A freeform window is the point of multi-window mode, so the app
+            # must not be forced full screen there; the desktop client starts
+            # apps this way and gives each one its own window.
+            platformService.settingsPutString(
+                2, "policy_control",
+                "immersive.status=*" if multiwin == "false" else "")
         else:
             logging.error("Failed to access IPlatform service")
     maybeLaunchLater(args, justLaunch)
@@ -142,12 +142,12 @@ def intent(args):
             platformService.setprop("waydroid.active_apps", pkg)
             multiwin = platformService.getprop(
                 "persist.waydroid.multi_windows", "false")
-            if multiwin == "false":
-                platformService.settingsPutString(
-                    2, "policy_control", "immersive.status=*")
-            else:
-                platformService.settingsPutString(
-                    2, "policy_control", "immersive.full=*")
+            # A freeform window is the point of multi-window mode, so the app
+            # must not be forced full screen there; the desktop client starts
+            # apps this way and gives each one its own window.
+            platformService.settingsPutString(
+                2, "policy_control",
+                "immersive.status=*" if multiwin == "false" else "")
         else:
             logging.error("Failed to access IPlatform service")
     maybeLaunchLater(args, justLaunch)

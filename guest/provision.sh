@@ -267,7 +267,11 @@ if not config.has_section('properties'):
 # Software rendering is the portable baseline for the VNC guest display.
 config['properties']['ro.hardware.gralloc'] = 'default'
 config['properties']['ro.hardware.egl'] = 'swiftshader'
-config['properties']['persist.waydroid.multi_windows'] = 'false'
+# Freeform windows are what lets the client start an app in a window of its
+# own instead of taking over the whole desktop. Waydroid reads this property
+# when it launches an app: "false" forces immersive full screen, which is the
+# opposite of what a per-app window needs.
+config['properties']['persist.waydroid.multi_windows'] = 'true'
 config['properties']['ro.hardware.camera'] = 'v4l2'
 with path.open('w') as stream:
     config.write(stream)

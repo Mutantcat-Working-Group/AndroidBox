@@ -145,6 +145,18 @@ class BrandingTests(unittest.TestCase):
         self.assertIn('install -m 0755 "$camera_hal_source"', provision)
         self.assertIn("etc/init", provision)
 
+    def test_freeform_windows_are_enabled_for_per_app_launches(self):
+        # The client starts an app with --windowingMode 5. Waydroid reads
+        # persist.waydroid.multi_windows when it launches an app and forces
+        # immersive full screen while it is "false", which would undo exactly
+        # the window the client asks for.
+        provision = source(ROOT / "guest/provision.sh")
+        self.assertIn("persist.waydroid.multi_windows'] = 'true'", provision)
+
+        manager = source(ROOT / "tools/actions/app_manager.py")
+        # Full-screen immersion is only for the single-window mode.
+        self.assertIn('"immersive.status=*" if multiwin == "false" else ""', manager)
+
     def test_camera_provider_uses_the_name_the_image_labels(self):
         # The vendor image's own vendor_file_contexts only labels
         # android.hardware.camera.provider@2.x-...-service as
