@@ -1,3 +1,38 @@
+## AndroidBox 1.1.20261116
+
+Apps now open in a window of their own instead of taking over the whole
+Android desktop, and the client knows what it just installed.
+
+**Per-app windows.** The client already asked Android for a freeform window on
+launch, but the guest was configured with `persist.waydroid.multi_windows =
+"false"`, which makes Waydroid force immersive full screen — the opposite of
+the window that was requested, so every app still covered the desktop.
+Multi-window is on now, and the launch path only applies full-screen immersion
+in single-window mode.
+
+**Nothing left running.** A guest with a few GB of memory cannot keep alive
+every app it has ever opened, and the leftovers are what push a later launch
+into memory pressure. Before an app starts, the apps the user is no longer
+looking at are force-stopped: system packages never, and the optional ones
+only when deep trimming is asked for. A graceful shutdown idles Android first,
+so QEMU powers down a guest with nothing writing to its disk.
+
+**The app's own name and icon.** Reading what an APK contains no longer needs
+aapt2 or an SDK: the manifest inside an archive is binary XML and its strings
+live in a compiled resource table, both parsed directly by the client. A fresh
+install is offered for launch straight away, with the app's own icon in the
+prompt, and so is an APK dragged onto the window.
+
+**Launching is tolerant.** `am start` reports success for an app that dies a
+second later, so every attempt is followed by a liveness check; a start that
+fails with a freeform window is retried full-screen and then through `monkey`.
+A crash naming the ARM translation layer is not retried, because no retry can
+supply a missing translator — the client says so instead.
+
+The app-launch and APK-reading behaviour was re-expressed in Python from
+ApkStart (MIT, github.com/RoutineMiku/apkstart); `THIRD-PARTY.md` records what
+came from there.
+
 ## AndroidBox 1.0.20261116
 
 This release fixes why the camera provider still did not reach guests that

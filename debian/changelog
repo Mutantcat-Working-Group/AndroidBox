@@ -1,3 +1,33 @@
+androidbox (1.1.20261116) unstable; urgency=medium
+
+  * Start an app in a window of its own. The client asked Android for a
+    freeform window on launch, but the guest was configured with
+    persist.waydroid.multi_windows = "false", which makes Waydroid force
+    immersive full screen - the opposite of the window that was requested.
+    Multi-window is on now, and the launch path only applies full-screen
+    immersion in single-window mode.
+
+  * Stop the apps the user is no longer looking at. A guest with a few
+    gigabytes of memory cannot keep every app it ever opened alive, and the
+    leftovers are what push a later launch into memory pressure. Before an
+    app starts, the others are force-stopped; system packages are never
+    touched, and the optional ones only when deep trimming is asked for. A
+    graceful shutdown idles Android first, so QEMU powers down a guest with
+    nothing writing to its disk.
+
+  * Read an APK's name, icon and launcher without aapt2. The manifest inside
+    an APK is binary XML and its strings live in a compiled resource table;
+    both are parsed directly, so the installed client needs no SDK and no
+    external process to know what it just installed.
+
+  * Offer to start what was installed, and show its own icon while asking.
+    Dragging an APK in now offers the same launch as the toolbar button.
+
+  * Credit ApkStart (MIT) in THIRD-PARTY.md: the app-launch and APK-reading
+    behaviour was re-expressed in Python from its source.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Mon, 16 Nov 2026 00:00:00 +0800
+
 androidbox (1.0.20261116) unstable; urgency=medium
 
   * Rebuild the guest seed when its payload changes, not just when the
