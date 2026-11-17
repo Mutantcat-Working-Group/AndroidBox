@@ -1,3 +1,12 @@
+## AndroidBox 1.1.20261117
+
+A rebuild of 1.1.20261116 at a new version number; nothing in the source
+changed, so the behaviour is the same as the previous release.
+
+1.1.20261116 moved the guest to freeform windows, stopped the apps the user is
+no longer looking at before a new one starts, and taught the client to read an
+APK's name and icon without aapt2 or an SDK.
+
 ## AndroidBox 1.1.20261116
 
 Apps now open in a window of their own instead of taking over the whole

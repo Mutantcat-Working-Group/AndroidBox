@@ -1,3 +1,12 @@
+androidbox (1.1.20261117) unstable; urgency=medium
+
+  * Rebuild the installers at a new version number. No source change since
+    1.1.20261116: the five installers are produced again from the same
+    commit, so this release differs from the previous one only in the
+    version stamped into it.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Tue, 17 Nov 2026 00:00:00 +0800
+
 androidbox (1.1.20261116) unstable; urgency=medium
 
   * Start an app in a window of its own. The client asked Android for a
