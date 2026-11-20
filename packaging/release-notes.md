@@ -1,3 +1,42 @@
+## AndroidBox 1.1.20261120
+
+The guest provisions itself again, and the camera provider keeps up with the
+framework instead of being buried by it. The camera preview is still black.
+
+**The guest unpacks on first launch.** A frozen build keeps its payload behind
+a symlink, and the archiver stored the link rather than what it points at, so
+the guest found no provisioner and stopped at "Not a directory" without ever
+setting Android up. 1.1.20261117 shipped that defect; it is fixed.
+
+**The camera provider answers what it is given.** The provider served one
+queued request per captured frame, while the loopback device runs at the
+bridge's frame rate rather than the 15–30 fps the device declares, and every
+request it had to drop was answered with an error the framework immediately
+resubmitted. The framework's in-flight list therefore grew by thousands of
+requests a second and logcat filled with `checkInflightMapLengthLocked:
+In-flight list too large`. Each frame now answers everything queued, and the
+queue holds only what arrived between two frames.
+
+Five more defects the same runs exposed are fixed: buffers delivered together
+shared one sensor timestamp and Camera3 rejected all but the first as
+non-monotonic; a hardware buffer handle was freed after the call that takes it
+over; cached buffers kept the framework's own descriptors; the flush paths
+dropped requests without answering them; and RGBA rows were written with a
+pitch measured in pixels rather than bytes.
+
+**The bridge and the provider share the loopback device.** The provider reads
+the sensor size without starting a stream, the node announces capture before a
+writer opens it, and the bridge pins its format so an encoder restart does not
+change it underneath the provider.
+
+**What this release does not do.** The camera preview still shows black. In a
+live guest `dumpsys media.camera` reports one device, Aperture opens it and
+configures a 640x480 preview and a JPEG stream, the provider logs one captured
+frame paired with the buffers it returns, and the sensor timestamps are
+monotonic — yet the preview region of a screenshot stays at background level.
+The remaining suspect is the path from the provider's buffer to the compositor.
+`docs/verification.md` records what was established and what was not.
+
 ## AndroidBox 1.1.20261117
 
 A rebuild of 1.1.20261116 at a new version number; nothing in the source

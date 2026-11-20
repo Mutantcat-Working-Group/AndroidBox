@@ -1,3 +1,37 @@
+androidbox (1.1.20261120) unstable; urgency=medium
+
+  * Extract the guest payload again. A frozen build keeps the payload behind a
+    symlink, and it was archived as the link instead of what it points at, so
+    the guest unpacked no provisioner and stopped at "Not a directory" without
+    ever setting Android up. The archiver now follows the link.
+
+  * Keep up with the camera provider's request queue. The provider answered one
+    queued request per captured frame while the loopback device runs at the
+    bridge's frame rate rather than the rate the device declares, and it
+    answered every request it had to drop with an error - which the framework
+    resubmitted immediately. The framework's in-flight list grew by thousands
+    of requests a second. Each frame now answers everything queued, and the
+    queue only holds what arrived between two frames.
+
+  * Fix five defects in the provider: buffers returned together shared one
+    sensor timestamp, which made Camera3 reject all but the first as
+    non-monotonic; an AHardwareBuffer handle was freed after the call that took
+    it over; cached buffers kept the framework's own descriptors instead of
+    duplicating them; flush paths dropped requests without answering them; and
+    RGBA rows were written with a pitch in pixels rather than bytes.
+
+  * Stop fighting the bridge for the loopback node. The sensor size is read
+    without starting a stream, the node announces capture before a writer opens
+    it (exclusive_caps is off), and the bridge pins its format so an encoder
+    restart does not change it under the provider.
+
+  * The camera preview is still black. cameraservice enumerates the device,
+    Aperture opens it and configures its streams, and the provider returns
+    buffers for every frame it captures, but nothing reaches the compositor.
+    What was established and what was not is recorded in docs/verification.md.
+
+ -- Mutantcat Working Group <tyza66@users.noreply.github.com>  Thu, 20 Nov 2026 00:00:00 +0800
+
 androidbox (1.1.20261117) unstable; urgency=medium
 
   * Rebuild the installers at a new version number. No source change since
