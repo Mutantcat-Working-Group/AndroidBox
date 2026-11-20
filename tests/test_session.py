@@ -7,6 +7,7 @@ a disk preparation and an upload each complete without QEMU or a guest image.
 """
 
 from concurrent.futures import Future
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -14,7 +15,15 @@ import unittest
 from unittest.mock import Mock, patch
 
 from androidbox import runtime
-from androidbox.session import MAX_GUEST_RESTARTS, GuestSession
+
+
+# The session is a QObject because its signals are what the window renders, so
+# the module cannot even be imported without Qt. The lightweight portability
+# job installs no Qt; the desktop job, which does, runs these tests.
+QT_AVAILABLE = importlib.util.find_spec("PySide6") is not None
+
+if QT_AVAILABLE:
+    from androidbox.session import MAX_GUEST_RESTARTS, GuestSession
 
 
 class InlinePool:
@@ -97,6 +106,7 @@ class FakeVM:
         return "test audio"
 
 
+@unittest.skipUnless(QT_AVAILABLE, "Install PySide6 to exercise the guest session")
 class SessionFixture(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
