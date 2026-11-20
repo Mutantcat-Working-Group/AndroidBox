@@ -139,6 +139,33 @@ class SeedTests(unittest.TestCase):
             refreshed = seed.ensure_seed(path, "aarch64", root=root)
             self.assertTrue(seed.seed_matches(refreshed, "aarch64", root=root))
 
+    def test_payload_follows_symlinked_entries_instead_of_storing_the_link(self):
+        # The frozen macOS bundle keeps the payload in Contents/Resources and
+        # leaves a symlink to it in _MEIPASS, which is what payload_root()
+        # returns. Storing that link makes the guest unpack the link first and
+        # then fail every file beneath it, so first boot never provisions.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "frameworks"
+            payload = Path(directory) / "resources"
+            root.mkdir()
+            (payload / "guest").mkdir(parents=True)
+            (payload / "Makefile").write_text("all:\n", encoding="utf-8")
+            (payload / "guest" / "provision.sh").write_text("echo hi\n", encoding="utf-8")
+            for entry in ("androidbox.py", "androidbox", "data", "tools", "dbus", "systemd"):
+                (payload / entry).mkdir()
+            for entry in seed.PAYLOAD_ENTRIES:
+                (root / entry).symlink_to(payload / entry)
+
+            archive = seed.write_payload_archive(Path(directory) / seed.PAYLOAD_ARCHIVE, root=root)
+            with archive.open("rb") as stream, tarfile.open(fileobj=stream, mode="r:gz") as tar:
+                members = {member.name: member for member in tar.getmembers()}
+                extracted = tar.extractfile("androidbox/Makefile").read()
+
+        self.assertFalse(members["androidbox/Makefile"].issym())
+        self.assertFalse(members["androidbox/guest"].issym())
+        self.assertIn("androidbox/guest/provision.sh", members)
+        self.assertEqual(extracted, b"all:\n")
+
     def test_read_iso_rejects_garbage(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bad.iso"

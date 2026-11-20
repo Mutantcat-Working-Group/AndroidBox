@@ -308,6 +308,14 @@ def _skip_caches(info):
 
 
 def _add_payload(archive, source, arcname):
+    if source.is_symlink():
+        # The frozen macOS bundle keeps every payload entry in Contents/Resources
+        # and leaves a symlink to it in _MEIPASS, so a directory here is usually
+        # the link rather than the payload. Tar stores the link itself, which
+        # makes the guest unpack it first and then refuse every file under it
+        # with "Not a directory" - the provisioner never runs at all. Follow it
+        # instead: the payload is what the link points at.
+        source = source.resolve()
     archive.add(source, arcname=arcname, recursive=False, filter=_skip_caches)
     if source.is_dir():
         for child in sorted(source.iterdir()):
