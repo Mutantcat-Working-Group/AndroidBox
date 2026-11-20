@@ -149,8 +149,10 @@ class SeedTests(unittest.TestCase):
             payload = Path(directory) / "resources"
             root.mkdir()
             (payload / "guest").mkdir(parents=True)
-            (payload / "Makefile").write_text("all:\n", encoding="utf-8")
-            (payload / "guest" / "provision.sh").write_text("echo hi\n", encoding="utf-8")
+            # Bytes, not text: a text write turns the newline into CRLF on
+            # Windows and the assertion below would compare against that.
+            (payload / "Makefile").write_bytes(b"all:\n")
+            (payload / "guest" / "provision.sh").write_bytes(b"echo hi\n")
             for entry in ("androidbox.py", "androidbox", "data", "tools", "dbus", "systemd"):
                 (payload / entry).mkdir()
             for entry in seed.PAYLOAD_ENTRIES:
