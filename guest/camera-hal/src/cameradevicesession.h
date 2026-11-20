@@ -29,7 +29,18 @@ namespace camera {
 // A graphics buffer handle plus the file descriptors that keep it alive. The
 // framework only attaches the handle the first time it hands a buffer over, so
 // the session has to remember it for every later frame.
+//
+// The descriptors in the reply belong to the reply's ScopedFileDescriptor and
+// close with it, so a cached entry holds duplicates of its own and closes them
+// when the entry is replaced or dropped.
 struct CachedBuffer {
+    CachedBuffer() = default;
+    ~CachedBuffer();
+    CachedBuffer(const CachedBuffer& other);
+    CachedBuffer& operator=(const CachedBuffer& other);
+    CachedBuffer(CachedBuffer&& other) noexcept;
+    CachedBuffer& operator=(CachedBuffer&& other) noexcept;
+
     std::vector<int> fds;
     std::vector<int> ints;
 };
@@ -117,6 +128,7 @@ private:
                           const ::aidl::android::hardware::camera::device::StreamBuffer& buffer,
                           const FrameSource::Frame& frame, size_t* bytesWritten);
     void reportBufferError(const PendingRequest& request, int32_t streamId);
+    void reportRequestError(const PendingRequest& request, int32_t streamId);
 
     // Stream bookkeeping.
     const Stream* findStream(int32_t id) const;
@@ -133,6 +145,11 @@ private:
     bool closed_ = false;
     bool configured_ = false;
     int32_t streamConfigCounter_ = 0;
+    // The last sensor timestamp handed to the framework. Camera3 rejects a
+    // buffer whose timestamp does not increase, and one captured frame answers
+    // several requests, so each of them gets its own tick instead of sharing the
+    // frame's.
+    int64_t lastDeliveredTimestampNs_ = 0;
 
     std::vector<Stream> streams_;
     FrameSource frameSource_;

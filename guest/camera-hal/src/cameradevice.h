@@ -6,6 +6,8 @@
 #ifndef ANDROIDBOX_CAMERA_DEVICE_H
 #define ANDROIDBOX_CAMERA_DEVICE_H
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -56,6 +58,11 @@ private:
     std::string videoDevice_;
     uint32_t sensorWidth_ = 640;
     uint32_t sensorHeight_ = 480;
+
+    // The session currently streaming the loopback device. open() only ever lets
+    // one exist: a second open closes the previous one first.
+    std::mutex sessionMutex_;
+    std::weak_ptr<CameraDeviceSession> session_;
 };
 
 }  // namespace camera

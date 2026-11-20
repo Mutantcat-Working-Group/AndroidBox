@@ -33,7 +33,12 @@ PREVIEW_BOUNDARY = b"androidbox-frame"
 # long the encoder goes without host frames before the test pattern returns.
 IDLE_TOLERANCE = 60.0
 IDLE_FALLBACK = 5.0
-TEST_PATTERN_INTERVAL = 2.0
+# The provider declares 15-30fps, and cameraservice's buffer loop times a
+# waitForFrame against that rate: a pattern slower than its floor leaves every
+# request unanswered until it times out, and the stale buffers pile up until
+# checkInflightMapLengthLocked reports the in-flight list too large. The pattern
+# therefore runs at the 5fps the slowest declared rate allows.
+TEST_PATTERN_INTERVAL = 0.2
 # Frames the encoder may sit behind the network; a faster host drops the oldest
 # frame instead of stalling the link that feeds the loopback camera.
 FRAME_QUEUE = 8
@@ -115,10 +120,40 @@ def capture_test_pattern():
 
 
 def start_encoder(video):
+    # image2pipe waits for the demuxer to sniff a whole frame before it opens
+    # the output device, and until it does the loopback node carries no format
+    # at all: a camera provider that asks for one gets EINVAL. The probe is
+    # capped so the device comes up on the first frame the bridge writes, not
+    # after ffmpeg decides it has seen enough.
     command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+               "-analyzeduration", "0", "-probesize", "32",
                "-f", "image2pipe", "-vcodec", "mjpeg", "-i", "pipe:0",
                "-vf", "format=yuv420p", "-f", "v4l2", video]
     return subprocess.Popen(command, stdin=subprocess.PIPE)
+
+
+def keep_device_format(video):
+    """Make the loopback node remember its format after the writer goes away.
+
+    The provider reads the format to learn the sensor size, and the encoder is
+    restarted whenever it dies, so the format has to outlive a writer or the
+    node answers EINVAL between restarts. Without it the provider is left
+    guessing the size of a stream it cannot read, which is what leaves a camera
+    app showing a black preview while the bridge is alive.
+
+    The control is what the v4l2loopback driver offers for this, and setting it
+    is best effort: a host without v4l-utils, or an old kernel without the
+    control, is not a reason to stop the bridge. It is still worth a line in
+    the log, because a failure here is otherwise indistinguishable from a
+    camera that simply never comes up.
+    """
+    try:
+        subprocess.run(["v4l2-ctl", "-d", video, "--set-ctrl", "keep_format=1"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       check=False, timeout=10)
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"camera bridge: could not keep {video} at its format: {error}",
+              file=sys.stderr, flush=True)
 
 
 class Encoder:
@@ -338,6 +373,7 @@ def main():
     if STILL_PATTERN.is_file():
         latest.publish(STILL_PATTERN.read_bytes())
     start_preview(latest)
+    keep_device_format(video)
     writer = Encoder(video, frames, latest)
     threading.Thread(target=writer.run, daemon=True).start()
     try:

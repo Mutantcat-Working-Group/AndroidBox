@@ -138,3 +138,10 @@ androidbox/web/novnc/
 
 # Downloaded guest Android image disks staged for the desktop packagers.
 /images/
+
+# Toolchains guest/camera-hal/build.sh downloads (NDK, build-tools, platform).
+guest/camera-hal/.deps/
+guest/camera-hal/build/
+
+# Playwright CLI trace and page dumps from a manual browser session.
+.playwright-cli/

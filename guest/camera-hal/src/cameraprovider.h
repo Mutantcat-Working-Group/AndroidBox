@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 
+#include <aidl/android/hardware/camera/device/BnCameraDevice.h>
 #include <aidl/android/hardware/camera/provider/BnCameraProvider.h>
 
 namespace androidbox {
@@ -23,7 +24,15 @@ class CameraProvider : public aidl::android::hardware::camera::provider::BnCamer
 public:
     // The device name the framework expects, in the form
     // "device@<interface major>.<minor>/<type>/<id>".
-    static constexpr const char* kDeviceName = "device@2.4/external/0";
+    //
+    // The major version is whatever cameraservice asks for, not what this HAL
+    // was built against: a name announcing an interface version the framework
+    // does not know is rejected outright ("Unsupported AIDL device HAL major
+    // version"), and a request for the name the framework actually uses is
+    // refused unless it is accepted here too. The version is therefore read
+    // off each request, and only the "<type>/<id>" suffix is fixed.
+    static constexpr const char* kDeviceSuffix = "external/0";
+    static constexpr const char* kDeviceName = "device@1.0/external/0";
     // The instance name this service registers as, matching the manifest.
     static constexpr const char* kServiceName =
             "android.hardware.camera.provider.ICameraProvider/external/0";
@@ -60,6 +69,8 @@ private:
     std::mutex mutex_;
     std::shared_ptr<aidl::android::hardware::camera::provider::ICameraProviderCallback> callback_;
     bool deviceAnnounced_ = false;
+    // The single device object, created on the first request and reused after.
+    std::shared_ptr<aidl::android::hardware::camera::device::ICameraDevice> device_;
 };
 
 }  // namespace camera

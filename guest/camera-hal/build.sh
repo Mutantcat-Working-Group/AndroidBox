@@ -9,10 +9,12 @@
 # from the NDK and the system libraries that are already inside the Android
 # image.
 #
-# The build needs two host tools, both downloaded on demand and cached under
+# The build needs three host tools, all downloaded on demand and cached under
 # guest/camera-hal/.deps:
 #   * the Android NDK (for clang and the bionic/libc++ headers)
 #   * the AIDL compiler from the Android build-tools (for the interface stubs)
+#   * the libbinder_ndk_cpp headers from an SDK platform, which the AIDL stubs
+#     include but neither the NDK nor the build-tools ship
 #
 # Set ANDROIDBOX_HAL_SKIP_DOWNLOADS=1 to fail fast instead of downloading, and
 # ANDROID_NDK_HOME / AIDL_COMPILER to point at tools you already have.
@@ -27,6 +29,11 @@ GEN_DIR="${BUILD_DIR}/gen"
 
 NDK_VERSION="r26c"
 BUILD_TOOLS_VERSION="33.0.2"
+# The AIDL stubs include <android/binder_interface_utils.h> and friends, which
+# live in the platform's optional/libbinder_ndk_cpp/ and ship in neither the NDK
+# nor the build-tools archive. This is the platform the guest image runs.
+PLATFORM_API_LEVEL="33"
+PLATFORM_VERSION="r02"
 API_LEVEL="33"
 TRIPLE="aarch64-linux-android33"
 
@@ -38,8 +45,8 @@ die() { printf '[camera-hal] %s\n' "$*" >&2; exit 1; }
 
 HOST_OS="$(uname -s)"
 case "${HOST_OS}" in
-    Darwin) HOST_TAG="darwin-x86_64" ;;
-    Linux) HOST_TAG="linux-x86_64" ;;
+    Darwin) HOST_TAG="darwin-x86_64"; BUILD_TOOLS_TAG="macosx" ;;
+    Linux) HOST_TAG="linux-x86_64"; BUILD_TOOLS_TAG="linux" ;;
     *) die "unsupported build host ${HOST_OS}" ;;
 esac
 LLVM_DIR="${NDK_HOME_CACHE:-}"
@@ -124,11 +131,13 @@ if [[ -z "${AIDL}" ]]; then
     if [[ "${ANDROIDBOX_HAL_SKIP_DOWNLOADS:-0}" == "1" ]]; then
         die "the AIDL compiler is required; set AIDL_COMPILER"
     fi
-    log "downloading Android build-tools ${BUILD_TOOLS_VERSION} for ${HOST_TAG%%-*}"
+    # The archive name uses the SDK's own spelling for the host (macosx, not
+    # darwin), and the NDK's spelling is not accepted there.
+    log "downloading Android build-tools ${BUILD_TOOLS_VERSION} for ${BUILD_TOOLS_TAG}"
     mkdir -p "${DEPS_DIR}/build-tools"
-    archive="${DEPS_DIR}/build-tools-${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip"
+    archive="${DEPS_DIR}/build-tools-${BUILD_TOOLS_VERSION}-${BUILD_TOOLS_TAG}.zip"
     curl -fSL --retry 3 -o "${archive}" \
-        "https://dl.google.com/android/repository/build-tools_r${BUILD_TOOLS_VERSION}-${HOST_TAG%%-*}.zip" \
+        "https://dl.google.com/android/repository/build-tools_r${BUILD_TOOLS_VERSION}-${BUILD_TOOLS_TAG}.zip" \
         || die "could not download build-tools"
     # Unpack into build-tools/, which is where find_aidl looks. The whole
     # android-<API>/ tree comes out, not just the compiler: aidl links against
@@ -148,6 +157,56 @@ aidl_library_dir="$(cd "$(dirname "${AIDL}")/.." 2>/dev/null && pwd)/lib64"
 if [[ -d "${aidl_library_dir}" ]]; then
     export LD_LIBRARY_PATH="${aidl_library_dir}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 fi
+
+# --------------------------------------------------- libbinder_ndk_cpp headers
+# The generated stubs derive from ndk::SharedRefBase and pull in
+# <android/binder_interface_utils.h>. Those C++ helpers are part of the platform,
+# not of the NDK sysroot or of the build-tools archive, so they come from the
+# SDK platform package for the API level the guest image runs.
+find_binder_cpp() {
+    local candidate
+    if [[ -n "${BINDER_CPP_HEADERS:-}" && -f "${BINDER_CPP_HEADERS}/android/binder_interface_utils.h" ]]; then
+        echo "${BINDER_CPP_HEADERS}"
+        return 0
+    fi
+    for candidate in "${DEPS_DIR}"/android-*/optional/libbinder_ndk_cpp \
+                     "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" \
+                     "${HOME}/Library/Android/sdk" "${HOME}/Android/Sdk" \
+                     /opt/android-sdk /usr/local/lib/android/sdk; do
+        if [[ -f "${candidate}/platforms/android-${API_LEVEL}/optional/libbinder_ndk_cpp/android/binder_interface_utils.h" ]]; then
+            echo "${candidate}/platforms/android-${API_LEVEL}/optional/libbinder_ndk_cpp"
+            return 0
+        fi
+        if [[ -f "${candidate}/android/binder_interface_utils.h" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+download_binder_cpp() {
+    log "downloading the Android ${API_LEVEL} platform for the binder C++ headers"
+    mkdir -p "${DEPS_DIR}"
+    local archive="${DEPS_DIR}/platform-${API_LEVEL}.zip"
+    curl -fSL --retry 3 -o "${archive}" \
+        "https://dl.google.com/android/repository/platform-${API_LEVEL}_${PLATFORM_VERSION}.zip" \
+        || die "could not download the platform package"
+    # The whole optional/ tree comes out, not just the headers: the stubs
+    # include <android/binder_*.h> from several of them, and matching a bare
+    # '*/android/*' does not cross a "/" in the GNU unzip on Linux.
+    (cd "${DEPS_DIR}" && unzip -q -o "${archive}" 'android-*/optional/libbinder_ndk_cpp/*')
+    find_binder_cpp
+}
+
+BINDER_CPP="$(find_binder_cpp || true)"
+if [[ -z "${BINDER_CPP}" ]]; then
+    if [[ "${ANDROIDBOX_HAL_SKIP_DOWNLOADS:-0}" == "1" ]]; then
+        die "the binder C++ headers are required; set BINDER_CPP_HEADERS"
+    fi
+    BINDER_CPP="$(download_binder_cpp)" || die "could not obtain the binder C++ headers"
+fi
+log "using binder C++ headers ${BINDER_CPP}"
 
 # ------------------------------------------------------------------ generation
 # aidl writes the NDK backend output under a leading "aidl" path and the plain
@@ -191,6 +250,7 @@ CXXFLAGS=(
     "-O2"
     "-g0"
     "-isystem" "${GEN_DIR}/aidl"
+    "-isystem" "${BINDER_CPP}"
     "-I" "${SRC_DIR}"
 )
 

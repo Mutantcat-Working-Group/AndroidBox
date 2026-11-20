@@ -20,6 +20,10 @@ namespace {
 
 constexpr int kBufferCount = 2;
 constexpr int kMaxFrameBytes = 32u << 20;  // Sanity cap for 8192x8192 YUV.
+// How long the device may carry no format before the provider gives up. The
+// bridge writes a test pattern within a few seconds of starting, so a longer
+// wait than that means there is no writer at all.
+constexpr int kFormatWaitMs = 30000;
 
 void logError(const char* what) {
     __android_log_print(ANDROID_LOG_ERROR, "androidbox-camera", "%s: %s", what, strerror(errno));
@@ -83,27 +87,48 @@ void FrameSource::stop() {
 }
 
 bool FrameSource::queryFormat() {
-    struct v4l2_format format = {};
-    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if (ioctl(fd_, VIDIOC_G_FMT, &format) < 0) {
-        logError("cannot read the loopback camera format");
-        return false;
+    // The format belongs to whoever writes the loopback device: until that
+    // writer has called VIDIOC_S_FMT the node carries no format at all and
+    // VIDIOC_G_FMT answers EINVAL. init starts the provider whenever the
+    // container boots, which has nothing to do with when the bridge restarts
+    // its encoder, so an idle device has to be waited for rather than treated
+    // as a broken one.
+    const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(kFormatWaitMs);
+    for (;;) {
+        struct v4l2_format format = {};
+        format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        if (ioctl(fd_, VIDIOC_G_FMT, &format) == 0) {
+            const uint32_t width = format.fmt.pix.width;
+            const uint32_t height = format.fmt.pix.height;
+            const uint32_t fourcc = format.fmt.pix.pixelformat;
+            if (width == 0 || height == 0 || width > 8192 || height > 8192) {
+                __android_log_print(ANDROID_LOG_ERROR, "androidbox-camera",
+                                    "the loopback camera reports an unusable size %ux%u", width,
+                                    height);
+                return false;
+            }
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                frame_.width = width;
+                frame_.height = height;
+                frame_.fourcc = fourcc;
+            }
+            return true;
+        }
+        if (errno != EINVAL) {
+            logError("cannot read the loopback camera format");
+            return false;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            __android_log_print(ANDROID_LOG_ERROR, "androidbox-camera",
+                                "the loopback camera carried no format for %d ms; "
+                                "is the camera bridge writing to it?",
+                                kFormatWaitMs);
+            return false;
+        }
+        usleep(200 * 1000);
     }
-    const uint32_t width = format.fmt.pix.width;
-    const uint32_t height = format.fmt.pix.height;
-    const uint32_t fourcc = format.fmt.pix.pixelformat;
-    if (width == 0 || height == 0 || width > 8192 || height > 8192) {
-        __android_log_print(ANDROID_LOG_ERROR, "androidbox-camera",
-                            "the loopback camera reports an unusable size %ux%u", width, height);
-        return false;
-    }
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        frame_.width = width;
-        frame_.height = height;
-        frame_.fourcc = fourcc;
-    }
-    return true;
 }
 
 bool FrameSource::setupBuffers() {

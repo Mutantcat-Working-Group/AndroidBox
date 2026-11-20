@@ -16,7 +16,7 @@ source_dir=$(cd -- "$(dirname -- "$0")/.." && pwd)
 apt-get update
 apt-get install -y make lxc python3 python3-dbus python3-gi python3-setuptools \
     gir1.2-gtk-3.0 polkitd dbus-user-session pulseaudio iptables dnsmasq-base \
-    cage greetd socat curl ca-certificates apparmor apparmor-utils ffmpeg
+    cage greetd socat curl ca-certificates apparmor apparmor-utils ffmpeg v4l-utils
 # The emulated sound card and the loopback camera ship their drivers in the
 # kernel packages. Best-effort on purpose: a guest whose cloud image carries a
 # trimmed kernel keeps booting, it just comes up without sound or camera.
@@ -75,10 +75,14 @@ EOF
 # because the host webcam can be streamed into it by the desktop client; the
 # vivid fallback only shows a test pattern, but it still hands every camera app
 # a device that opens and streams instead of failing outright.
+#
+# exclusive_caps has to stay off. With it on, the node reports only Video
+# Output until a writer opens it, so the camera provider's capability check
+# fails and Android is left without a camera even though the bridge is running.
 camera_device=""
-if modprobe v4l2loopback video_nr=0 card_label="AndroidBox Camera" exclusive_caps=1 max_buffers=2; then
+if modprobe v4l2loopback video_nr=0 card_label="AndroidBox Camera" exclusive_caps=0 max_buffers=2; then
     cat > /etc/modprobe.d/androidbox-video.conf <<'EOF'
-options v4l2loopback video_nr=0 card_label="AndroidBox Camera" exclusive_caps=1 max_buffers=2
+options v4l2loopback video_nr=0 card_label="AndroidBox Camera" exclusive_caps=0 max_buffers=2
 EOF
     printf 'v4l2loopback\n' > /etc/modules-load.d/androidbox-video.conf
     camera_device=/dev/video0

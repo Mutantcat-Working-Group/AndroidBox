@@ -64,13 +64,31 @@ void CameraProvider::announceDevice() {
 
 ::ndk::ScopedAStatus CameraProvider::getCameraDeviceInterface(
         const std::string& in_cameraDeviceName,
-        std::shared_ptr<::aidl::android::hardware::camera::device::ICameraDevice>* _aidl_return) {
-    if (in_cameraDeviceName != kDeviceName) {
+        std::shared_ptr<aidl::android::hardware::camera::device::ICameraDevice>* _aidl_return) {
+    // Accept any interface version the framework asks for: cameraservice asks
+    // for the device under the major version its own framework knows, which is
+    // not necessarily the one this HAL was compiled against. Refusing the name
+    // it actually uses is what left the announced camera unreachable, so the
+    // version is dropped and only "<type>/<id>" is compared.
+    if (in_cameraDeviceName.rfind("device@", 0) != 0) {
         logInfo("ignoring a request for unknown camera %s", in_cameraDeviceName.c_str());
         _aidl_return->reset();
         return ::ndk::ScopedAStatus::ok();
     }
-    *_aidl_return = ::ndk::SharedRefBase::make<CameraDevice>(videoDevice_);
+    const size_t slash = in_cameraDeviceName.find('/');
+    if (slash == std::string::npos ||
+        in_cameraDeviceName.compare(slash + 1, std::string::npos, kDeviceSuffix) != 0) {
+        logInfo("ignoring a request for unknown camera %s", in_cameraDeviceName.c_str());
+        _aidl_return->reset();
+        return ::ndk::ScopedAStatus::ok();
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (device_ == nullptr) {
+        // One device object for the provider's lifetime: creating one per call
+        // made every framework request probe the loopback device all over again.
+        device_ = ::ndk::SharedRefBase::make<CameraDevice>(videoDevice_);
+    }
+    *_aidl_return = device_;
     return ::ndk::ScopedAStatus::ok();
 }
 

@@ -177,6 +177,41 @@ class BrandingTests(unittest.TestCase):
         # leave init unable to resolve the uid.
         self.assertIn("user system", rc)
 
+    def test_camera_provider_started_by_init_sets_no_capabilities(self):
+        # init cannot resolve the users a capability set names in this image,
+        # and then refuses to start the service at all ("cannot set
+        # capabilities for vendor.camera-external", exit status 6). The HAL
+        # only reads the loopback node, so it needs none.
+        rc = source(ROOT / "guest/camera-hal/deploy"
+                    / "android.hardware.camera.provider@2.4-external-service.rc")
+        # Directives only: the comments above them explain why they are gone.
+        directives = [line.strip().split()[0]
+                      for line in rc.splitlines()
+                      if line.startswith((" ", "\t")) and line.strip()
+                      and not line.strip().startswith("#")]
+        self.assertNotIn("capabilities", directives)
+        # RT ioprio needs the same capability, so it goes too.
+        self.assertNotIn("ioprio", directives)
+        self.assertIn("task_profiles", directives)
+
+    def test_the_loopback_node_announces_capture_without_a_writer(self):
+        # With exclusive_caps on, v4l2loopback reports only Video Output until
+        # somebody opens the node for writing, so the camera provider's
+        # capability check fails and Android sees no camera.
+        provision = source(ROOT / "guest/provision.sh")
+        self.assertIn('exclusive_caps=0', provision)
+        self.assertNotIn('exclusive_caps=1', provision)
+
+    def test_the_guest_installs_v4l_utils_for_the_camera_bridge(self):
+        # camera-bridge.py pins the loopback node's format with
+        # `v4l2-ctl --set-ctrl keep_format=1`; without the package the call
+        # fails every time, and the node forgets its format whenever the
+        # encoder restarts, which leaves the camera app with a black preview.
+        provision = source(ROOT / "guest/provision.sh")
+        self.assertIn("v4l-utils", provision)
+        bridge = source(ROOT / "guest/camera-bridge.py")
+        self.assertIn('"--set-ctrl", "keep_format=1"', bridge)
+
 
 if __name__ == "__main__":
     unittest.main()

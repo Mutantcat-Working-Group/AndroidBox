@@ -829,3 +829,149 @@ The frozen self-test reports the bundled disk, and every CI installer check
 (`--require-runtime --require-images`) now proves the images actually reached the
 package: the built executable, the mounted DMG, the installed Windows copy and
 the extracted AppImage.
+
+## Camera HAL In A Live Guest (2026-11-20)
+
+The replacement provider from `guest/camera-hal/` was installed into a real
+guest and exercised from a camera app, instead of the static checks that closed
+the 2026-11-10 entry above.
+
+Observed:
+
+- `dumpsys media.camera` reports `Number of camera devices: 1`, so the provider
+  process starts, registers with `cameraserver` and enumerates its one external
+  device. This is the enumeration the 2026-11-10 entry left open, and it works.
+- Aperture connects to that device, `open()` succeeds and its CameraActivity
+  opens, but the preview stays completely black.
+- logcat is flooded with
+  `Camera3-Device: Camera 0: checkInflightMapLengthLocked: In-flight list too large: <number>`.
+  The reported number is far larger than any plausible request depth, which
+  means the framework is counting requests and buffers that the HAL never
+  completed rather than reporting real backpressure.
+- CPU during the black preview: `cameraserver` about 46%, the provider process
+  about 24%. Both busy, neither making progress.
+- The provider's own log tag `androidbox-camera` produced no entries at all in
+  that logcat window. Every `__android_log_print` call in
+  `cameradevice.cpp`, `cameradevicesession.cpp` and `framesource.cpp` uses that
+  tag, so either the provider binary running in the guest is not the one in
+  this tree, or its logging is reaching a different buffer. Until that is
+  explained, no HAL-side conclusion can be drawn from logcat alone.
+
+Root-cause hypotheses from a code review of this tree, not yet confirmed by a
+live test:
+
+1. `flush()` returns without telling the framework anything.
+   `CameraDeviceSession::flush()` (`guest/camera-hal/src/cameradevicesession.cpp:267`)
+   only clears `pending_` and returns `ok()`. Camera3 requires a flush to be
+   followed by an `ERROR_REQUEST` notification for every request that was in
+   flight; clearing the queue silently leaves each of those requests counted as
+   still in flight forever, which is exactly the shape of a growing in-flight
+   list.
+2. `signalStreamFlush()` does the same with a narrower scope.
+   `guest/camera-hal/src/cameradevicesession.cpp:351` erases the pending
+   requests for the named streams without emitting a shutter, a result or an
+   error for them.
+3. A failed buffer request is reported at the wrong level.
+   When `requestStreamBuffer()` fails
+   (`guest/camera-hal/src/cameradevicesession.cpp:392`, called from the worker
+   at line 611), the session reports `ErrorCode::ERROR_BUFFER` through
+   `reportBufferError()` (line 528). Camera3 counts buffers on a request and
+   closes the request only on `ERROR_REQUEST`; an `ERROR_BUFFER` leaves the
+   request in flight, so `numBuffersLeft` never reaches zero and the request
+   never leaves the in-flight map.
+4. The `CameraDevice` constructor interrupts whoever is writing the device.
+   `CameraDevice::CameraDevice()` (`guest/camera-hal/src/cameradevice.cpp:18`)
+   opens the loopback node with a throwaway `FrameSource` to read the sensor
+   size, and `FrameSource::start()` runs `VIDIOC_STREAMON`
+   (`guest/camera-hal/src/framesource.cpp:177`) before `stop()` tears it down.
+   On v4l2loopback that stream-on/off pair makes the node drop its queued state
+   under the live ffmpeg writer, which can leave the device formatless or the
+   writer stalled for the rest of the session.
+5. `keep_format` was never applied on this guest.
+   `keep_device_format()` (`guest/camera-bridge.py:130`) shells out to
+   `v4l2-ctl` from `v4l-utils`. `guest/provision.sh:19` now installs `v4l-utils`,
+   but a guest provisioned before that line existed has no `v4l2-ctl`; the
+   `OSError` is caught and only printed to stderr, so the node keeps no format
+   across writer restarts. A non-zero `v4l2-ctl` exit (for example an unknown
+   control) is silent for the same reason, since the call is made with
+   `check=False`.
+
+Still to be verified:
+
+- Which provider binary the guest actually runs, and why the `androidbox-camera`
+  tag is absent from logcat: check the installed `bin/hw` binary hash and the
+  `logcat` buffers (`-b all`) rather than the default view.
+- Whether the flood starts at the first `flush()`/`signalStreamFlush()` (Aperture
+  and camera2 close and reopen streams often) or at the first failed
+  `requestStreamBuffers()`; the entry that precedes the first
+  `checkInflightMapLengthLocked` line decides between hypotheses 1-2 and 3.
+- Whether the provider's `requestStreamBuffers` calls are being refused by
+  `cameraserver` (buffer count, buffer sizes, or `ANDROID_JPEG_MAX_SIZE`), which
+  would be visible on the framework side and is not visible on the HAL side.
+- Whether the black preview survives a rebuild that defers the characteristics
+  probe to after `configureStreams`, i.e. removing the constructor's
+  stream-on/off (hypothesis 4).
+- Whether `v4l2loopback` on this kernel exposes `keep_format` at all, and
+  whether setting it before the first ffmpeg write keeps the format across an
+  encoder restart (hypothesis 5).
+
+## The Camera HAL After The Frame-Batch Fix (2026-11-20, later)
+
+The provider was rebuilt with the changes that follow from the first live run and
+installed into the same guest; the test that matters is whether an app's preview
+shows the host webcam.
+
+Measured after the fix:
+
+- `dumpsys media.camera` reports the preview stream producing frames
+  (`Frames produced` climbing) and a `Latest received frame` carrying
+  `sensor.timestamp`, so the framework is receiving complete capture results and
+  the buffers are being dequeued and handed back.
+- The HAL's own log pairs one `request N got a 640x480 frame` with one
+  `request N returned 1 buffers`, and no request is dropped, refused or reported
+  as failed.
+- The provider process stays up across app restarts with no JNI abort, and
+  `Number of camera devices: 1` holds.
+
+Changes in this build:
+
+1. One frame now answers every request waiting for it instead of one request.
+   The loopback device runs at the bridge's frame rate, which is below the rate
+   the framework submits requests at; serving one request per frame left the rest
+   queued, and every dropped request made the framework submit another.
+2. `CachedBuffer` duplicates the descriptors in the framework's reply before
+   caching them and closes its own copies, so a cached handle never outlives the
+   descriptor it was built from.
+3. `flush()` and `signalStreamFlush()` answer every request they drop with
+   `ERROR_REQUEST`; `flush()` used to clear the queue silently.
+4. `AHardwareBuffer_createFromHandle` takes the handle over on success
+   (`semantics = 2`, GraphicBuffer's `TAKE_UNREGISTERED_OWNERSHIP`), so the
+   `free(handle)` that followed it was a double free and now only happens on the
+   failure path.
+5. RGBA rows are written with `description.stride * 4` bytes of pitch: `stride`
+   is in pixels and a mapped RGBA row is four bytes per pixel.
+6. `FrameSource::queryFormat()` waits for the writer's format instead of
+   treating `EINVAL` as fatal, and `CameraDevice` reads the size with
+   `VIDIOC_G_FMT` only, so its probe no longer starts and stops the stream under
+   the bridge.
+7. The init service declares no capability set and no RT ioprio, both of which
+   init cannot resolve in this image and which made it refuse to start the
+   service.
+8. `v4l2loopback` loads with `exclusive_caps=0` and the bridge pins
+   `keep_format=1`, so the node announces capture before a writer opens it and
+   keeps its format across an encoder restart.
+
+Still not working, stated plainly: the preview does not show the webcam. With
+the provider painting a stream that the framework reports as produced, the
+remaining suspect is the path from the HAL's buffer to the compositor, not the
+capture path. The `checkInflightMapLengthLocked` warnings also continue, which
+means the framework still counts requests the provider considers answered; that
+discrepancy has to be understood before the preview can be called fixed.
+
+One more finding from the same run, fixed in this build: `Camera3-Stream:
+returnBuffer: Stream 0: timestamp ... is not increasing` repeated for every
+frame. A single captured frame answers several requests, so all of them carried
+the frame's own timestamp and Camera3 refused every buffer after the first. Each
+delivered result now advances the sensor timestamp by 1 ms and the shutter and
+`sensor.timestamp` metadata carry the same value; the error is gone from logcat,
+but the preview is still black, so it was a real defect rather than the only one.

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <utility>
 
 #include <aidl/android/hardware/camera/common/Status.h>
 #include <aidl/android/hardware/camera/device/BufferRequest.h>
@@ -69,14 +70,34 @@ struct native_handle_t {
 };
 
 // AHardwareBuffer_createFromHandle is exported by libnativewindow but is not
-// part of the NDK headers, so it is declared here.
-extern "C" int AHardwareBuffer_createFromHandle(const native_handle_t* handle,
+// part of the NDK headers, so it is declared here with the signature the
+// platform library actually implements: a descriptor, the handle, a semantics
+// bitmask and the out pointer. Calling it with the two-argument shorthand that
+// older HALs used leaves the descriptor argument holding a handle instead,
+// which the library answers with EINVAL.
+extern "C" int AHardwareBuffer_createFromHandle(const AHardwareBuffer_Desc* desc,
+                                                const native_handle_t* handle, int32_t semantics,
                                                 AHardwareBuffer** outBuffer);
 
 // How many requests may wait for a frame before the oldest is dropped. The
-// framework stops handing out buffers when the HAL cannot keep up, so this only
-// bounds how far behind the loopback device may fall.
-constexpr size_t kMaxPendingRequests = 2;
+// worker empties this queue into every frame it captures, so in steady state it
+// only holds what the framework submitted between two frames. A small bound here
+// is what makes the framework spin: each dropped request is answered with
+// ERROR_REQUEST, the framework immediately resubmits it, and the resubmission is
+// dropped too, so the queue never drains and the framework's own in-flight list
+// grows by thousands of requests per second.
+constexpr size_t kMaxPendingRequests = 64;
+
+// The spacing given to requests that share one captured frame, so every result
+// carries a timestamp larger than the one before it.
+constexpr int64_t kFrameTickNs = 1000000;  // 1 ms.
+
+// The only semantics value the platform library accepts (it rejects 0 and 1
+// with EINVAL). It maps onto GraphicBuffer's TAKE_UNREGISTERED_OWNERSHIP, which
+// means the buffer takes the handle over: freeing it here as well is a double
+// free, and the heap corruption it causes shows up much later, in whatever the
+// next free() happens to be.
+constexpr int kHandleSemanticsDefault = 2;
 
 native_handle_t* makeNativeHandle(const CachedBuffer& cached) {
     native_handle_t* handle = static_cast<native_handle_t*>(
@@ -104,13 +125,65 @@ CachedBuffer cacheFrom(const StreamBuffer& buffer) {
     }
     cached.fds.reserve(buffer.buffer.fds.size());
     for (const auto& fd : buffer.buffer.fds) {
-        cached.fds.push_back(fd.get());
+        // The descriptor in the reply belongs to the reply, so the cache keeps a
+        // duplicate of it and closes that when the entry is replaced.
+        cached.fds.push_back(fd.get() >= 0 ? dup(fd.get()) : -1);
     }
     cached.ints = buffer.buffer.ints;
     return cached;
 }
 
 }  // namespace
+
+CachedBuffer::~CachedBuffer() {
+    for (int fd : fds) {
+        if (fd >= 0) {
+            close(fd);
+        }
+    }
+}
+
+CachedBuffer::CachedBuffer(const CachedBuffer& other) : fds(other.fds.size()), ints(other.ints) {
+    for (size_t i = 0; i < other.fds.size(); ++i) {
+        fds[i] = other.fds[i] >= 0 ? dup(other.fds[i]) : -1;
+    }
+}
+
+CachedBuffer& CachedBuffer::operator=(const CachedBuffer& other) {
+    if (this != &other) {
+        std::vector<int> duplicated(other.fds.size(), -1);
+        for (size_t i = 0; i < other.fds.size(); ++i) {
+            duplicated[i] = other.fds[i] >= 0 ? dup(other.fds[i]) : -1;
+        }
+        for (int fd : fds) {
+            if (fd >= 0) {
+                close(fd);
+            }
+        }
+        fds = std::move(duplicated);
+        ints = other.ints;
+    }
+    return *this;
+}
+
+CachedBuffer::CachedBuffer(CachedBuffer&& other) noexcept
+    : fds(std::move(other.fds)), ints(std::move(other.ints)) {
+    other.fds.clear();
+}
+
+CachedBuffer& CachedBuffer::operator=(CachedBuffer&& other) noexcept {
+    if (this != &other) {
+        for (int fd : fds) {
+            if (fd >= 0) {
+                close(fd);
+            }
+        }
+        fds = std::move(other.fds);
+        ints = std::move(other.ints);
+        other.fds.clear();
+    }
+    return *this;
+}
 
 CameraDeviceSession::CameraDeviceSession(std::string videoDevice, uint32_t sensorWidth,
                                          uint32_t sensorHeight)
@@ -256,8 +329,15 @@ bool CameraDeviceSession::streamIsSupported(
 }
 
 ::ndk::ScopedAStatus CameraDeviceSession::flush() {
+    // A flushed request still counts as in-flight in the framework until it is
+    // answered, so every pending request is reported as failed before it is
+    // dropped: leaving it unanswered is what makes the framework's in-flight
+    // list grow without bound.
     std::lock_guard<std::mutex> lock(mutex_);
-    pending_.clear();
+    while (!pending_.empty()) {
+        reportRequestError(pending_.front(), -1);
+        pending_.pop_front();
+    }
     return ::ndk::ScopedAStatus::ok();
 }
 
@@ -323,8 +403,13 @@ bool CameraDeviceSession::streamIsSupported(
             }
             pending_.push_back(std::move(pending));
             while (pending_.size() > kMaxPendingRequests) {
-                // The loopback device cannot keep up; the framework will time
-                // the dropped request out and report an error for it.
+                // The loopback device cannot keep up. Dropping a request
+                // silently is what leaves the framework's frame tracker
+                // waiting for a reply that never comes: camera2 grows its
+                // pending-frame list until the app runs out of heap and dies
+                // in FrameNumberTracker.updateCompletedFrameNumber, so the
+                // dropped request is reported as an error instead.
+                reportRequestError(pending_.front(), -1);
                 pending_.pop_front();
             }
         }
@@ -336,11 +421,15 @@ bool CameraDeviceSession::streamIsSupported(
 
 ::ndk::ScopedAStatus CameraDeviceSession::signalStreamFlush(
         const std::vector<int32_t>& in_streamIds, int32_t /*in_streamConfigCounter*/) {
+    // Same contract as flush(): each request that leaves the queue because a
+    // stream went away has to be answered with an error, otherwise the
+    // framework keeps it in its in-flight list forever.
     std::lock_guard<std::mutex> lock(mutex_);
     for (int32_t streamId : in_streamIds) {
         for (auto it = pending_.begin(); it != pending_.end();) {
             if (std::find(it->streamIds.begin(), it->streamIds.end(), streamId) !=
                 it->streamIds.end()) {
+                reportRequestError(*it, streamId);
                 it = pending_.erase(it);
             } else {
                 ++it;
@@ -434,27 +523,44 @@ bool CameraDeviceSession::fillStreamBuffer(const Stream& stream, const StreamBuf
         return false;
     }
     AHardwareBuffer* hardwareBuffer = nullptr;
-    const int created = AHardwareBuffer_createFromHandle(handle, &hardwareBuffer);
+    // The descriptor the platform library builds its GraphicBuffer from. The
+    // framework's own stream configuration is the source of the size and
+    // format, so the cached handle and this description agree.
+    AHardwareBuffer_Desc description = {};
+    description.width = static_cast<uint32_t>(stream.width);
+    description.height = static_cast<uint32_t>(stream.height);
+    description.layers = 1;
+    description.format = stream.isBlob ? AHARDWAREBUFFER_FORMAT_BLOB
+                                       : AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+    description.usage = AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN |
+                        AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN;
+    description.stride = stream.isBlob ? 0 : static_cast<uint32_t>(stream.width);
+    const int created = AHardwareBuffer_createFromHandle(
+            &description, handle, kHandleSemanticsDefault, &hardwareBuffer);
+    if (created != 0) {
+        // Nothing took the handle over, so it is still ours.
+        free(handle);
+    }
     if (created != 0 || hardwareBuffer == nullptr) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
                             "cannot adopt a graphics buffer for stream %d: %d", buffer.streamId,
                             created);
-        free(handle);
         return false;
     }
 
     bool ok = false;
-    AHardwareBuffer_Desc description = {};
-    AHardwareBuffer_describe(hardwareBuffer, &description);
+    AHardwareBuffer_Desc actual = {};
+    AHardwareBuffer_describe(hardwareBuffer, &actual);
     const uint64_t lockUsage = AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN;
     void* mapped = nullptr;
     const int locked = AHardwareBuffer_lock(hardwareBuffer, lockUsage, -1, nullptr, &mapped);
     if (locked != 0 || mapped == nullptr) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag, "cannot lock a graphics buffer: %d",
                             locked);
-        free(handle);
+        AHardwareBuffer_release(hardwareBuffer);
         return false;
     }
+    description = actual;
 
     if (stream.isBlob) {
         std::vector<uint8_t> jpeg =
@@ -480,19 +586,23 @@ bool CameraDeviceSession::fillStreamBuffer(const Stream& stream, const StreamBuf
         if (convertYu12ToRgba(frame.planes.data(), frame.width, frame.height, frame.width,
                                       width, height, rgba.data())) {
             // Gralloc rows are padded; copy row by row.
+            // description.stride is in pixels, and a mapped RGBA row is four
+            // bytes per pixel wide.
             const uint32_t rowBytes = width * 4;
+            const size_t strideBytes = static_cast<size_t>(description.stride) * 4;
             auto* destination = static_cast<uint8_t*>(mapped);
             for (uint32_t row = 0; row < height; ++row) {
-                memcpy(destination + static_cast<size_t>(row) * description.stride,
+                memcpy(destination + static_cast<size_t>(row) * strideBytes,
                        rgba.data() + static_cast<size_t>(row) * rowBytes, rowBytes);
             }
-            *bytesWritten = description.stride * height;
+            *bytesWritten = strideBytes * height;
             ok = true;
         }
     }
 
     AHardwareBuffer_unlock(hardwareBuffer, nullptr);
-    free(handle);
+    // createFromHandle returned a buffer with a reference of its own.
+    AHardwareBuffer_release(hardwareBuffer);
     return ok;
 }
 
@@ -509,6 +619,19 @@ void CameraDeviceSession::reportBufferError(const PendingRequest& request, int32
     callback_->notify({error});
 }
 
+void CameraDeviceSession::reportRequestError(const PendingRequest& request, int32_t streamId) {
+    if (callback_ == nullptr) {
+        return;
+    }
+    NotifyMsg error;
+    ::aidl::android::hardware::camera::device::ErrorMsg message;
+    message.frameNumber = request.frameNumber;
+    message.errorStreamId = streamId;
+    message.errorCode = aidl::android::hardware::camera::device::ErrorCode::ERROR_REQUEST;
+    error.set<NotifyMsg::Tag::error>(message);
+    callback_->notify({error});
+}
+
 void CameraDeviceSession::workerLoop() {
     while (true) {
         PendingRequest request;
@@ -518,7 +641,7 @@ void CameraDeviceSession::workerLoop() {
             if (closed_) {
                 return;
             }
-            request = pending_.front();
+            request = std::move(pending_.front());
             pending_.pop_front();
         }
         if (callback_ == nullptr) {
@@ -527,116 +650,166 @@ void CameraDeviceSession::workerLoop() {
 
         FrameSource::Frame frame;
         if (!frameSource_.waitForFrame(frame, 1000)) {
-            // Nothing has arrived from the host; report a buffer error so the
-            // framework can recover instead of waiting forever.
+            // Nothing has arrived from the host; report the whole request as
+            // failed so the framework can retry instead of waiting forever.
+            // The request is what never completed, not one of its buffers, and
+            // only an ERROR_REQUEST closes it in the framework's tracker.
             __android_log_print(ANDROID_LOG_WARN, kLogTag,
                                 "no frame arrived from %s for request %d", videoDevice_.c_str(),
                                 request.frameNumber);
-            reportBufferError(request, -1);
-            continue;
-        }
-        __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "request %d got a %dx%d frame",
-                            request.frameNumber, frame.width, frame.height);
-
-        // The shutter comes first: the framework times the request from here.
-        ShutterMsg shutter;
-        shutter.frameNumber = request.frameNumber;
-        shutter.timestamp = frame.timestampNs;
-        shutter.readoutTimestamp = frame.timestampNs;
-        NotifyMsg message;
-        message.set<NotifyMsg::Tag::shutter>(shutter);
-        std::vector<NotifyMsg> notifications;
-        notifications.push_back(std::move(message));
-        const auto notified = callback_->notify(notifications);
-        if (!notified.isOk()) {
+            reportRequestError(request, -1);
             continue;
         }
 
-        ::aidl::android::hardware::camera::device::CaptureResult result;
-        result.frameNumber = request.frameNumber;
-        result.partialResult = 1;
-        int32_t jpegStreamId = -1;
-        size_t jpegBytes = 0;
-        for (int32_t streamId : request.streamIds) {
-            const Stream* stream = findStream(streamId);
-            if (stream == nullptr) {
-                reportBufferError(request, streamId);
-                continue;
+        // One frame answers every request that is waiting for it. The loopback
+        // device runs at the rate the host bridge writes frames, which is slower
+        // than the rate the framework submits requests at; handing a frame to a
+        // single request left the rest queued, and every request the queue had
+        // to drop made the framework submit another, so the queue and the
+        // framework's in-flight list grew without bound. The queue is emptied
+        // under the lock so a request submitted during delivery is served by
+        // the next frame rather than lost.
+        std::vector<PendingRequest> batch;
+        batch.push_back(std::move(request));
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            while (!pending_.empty()) {
+                batch.push_back(std::move(pending_.front()));
+                pending_.pop_front();
             }
-            StreamBuffer buffer;
-            if (!requestStreamBuffer(streamId, &buffer)) {
-                reportBufferError(request, streamId);
-                continue;
-            }
-            size_t bytes = 0;
-            const bool filled = fillStreamBuffer(*stream, buffer, frame, &bytes);
-            // The framework matches a returned buffer by its id, and the handle
-            // must not travel back with it.
-            buffer.buffer.fds.clear();
-            buffer.buffer.ints.clear();
-            buffer.status = filled ? BufferStatus::OK : BufferStatus::ERROR;
-            if (filled && stream->isBlob) {
-                jpegStreamId = streamId;
-                jpegBytes = bytes;
-            }
-            result.outputBuffers.push_back(std::move(buffer));
         }
-
-        // No reprocessing: the input buffer is unused.
-        result.inputBuffer.streamId = -1;
-
-        MetadataView requestSettings(request.settings);
-        MetadataBuilder metadata;
-        // The framework expects the result to echo the settings it sent.
-        static const int32_t echoKeys[] = {
-                ANDROID_CONTROL_AE_MODE,
-                ANDROID_CONTROL_AF_MODE,
-                ANDROID_CONTROL_AWB_MODE,
-                ANDROID_CONTROL_CAPTURE_INTENT,
-                ANDROID_CONTROL_EFFECT_MODE,
-                ANDROID_CONTROL_MODE,
-                ANDROID_CONTROL_SCENE_MODE,
-                ANDROID_CONTROL_VIDEO_STABILIZATION_MODE,
-                ANDROID_COLOR_CORRECTION_ABERRATION_MODE,
-                ANDROID_EDGE_MODE,
-                ANDROID_NOISE_REDUCTION_MODE,
-                ANDROID_STATISTICS_FACE_DETECT_MODE,
-        };
-        for (int32_t key : echoKeys) {
-            requestSettings.copyTo(metadata, static_cast<uint32_t>(key));
-        }
-        const int64_t timestamp = frame.timestampNs;
-        metadata.addInt64(ANDROID_SENSOR_TIMESTAMP, &timestamp, 1);
-        const uint8_t aeState = ANDROID_CONTROL_AE_STATE_CONVERGED;
-        metadata.addByte(ANDROID_CONTROL_AE_STATE, &aeState, 1);
-        const uint8_t afState = ANDROID_CONTROL_AF_STATE_INACTIVE;
-        metadata.addByte(ANDROID_CONTROL_AF_STATE, &afState, 1);
-        const uint8_t awbState = ANDROID_CONTROL_AWB_STATE_CONVERGED;
-        metadata.addByte(ANDROID_CONTROL_AWB_STATE, &awbState, 1);
-        const uint8_t pipelineDepth = 4;
-        metadata.addByte(ANDROID_REQUEST_PIPELINE_DEPTH, &pipelineDepth, 1);
-        const int32_t jpegOrientation = 0;
-        metadata.addInt32(ANDROID_JPEG_ORIENTATION, &jpegOrientation, 1);
-        if (jpegStreamId >= 0) {
-            const int32_t size = static_cast<int32_t>(jpegBytes);
-            metadata.addInt32(ANDROID_JPEG_SIZE, &size, 1);
-        }
-        result.result.metadata = metadata.build();
-
-        // The reply is built as a vector and the result moved into it: the
-        // buffers it carries own file descriptors and cannot be copied.
-        const size_t bufferCount = result.outputBuffers.size();
-        std::vector<aidl::android::hardware::camera::device::CaptureResult> results;
-        results.push_back(std::move(result));
-        const auto returned = callback_->processCaptureResult(results);
-        if (!returned.isOk()) {
-            __android_log_print(ANDROID_LOG_ERROR, kLogTag, "returning a frame failed: %s",
-                                returned.getDescription().c_str());
-        } else {
-            __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "request %d returned %zu buffers",
-                                request.frameNumber, bufferCount);
+        for (auto& queued : batch) {
+            deliverFrame(frame, queued);
         }
     }
+}
+
+void CameraDeviceSession::deliverFrame(const FrameSource::Frame& frame, PendingRequest& request) {
+    __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "request %d got a %dx%d frame",
+                        request.frameNumber, frame.width, frame.height);
+
+    // The shutter comes first: the framework times the request from here. One
+    // frame can answer several requests, so the timestamp is advanced by a tick
+    // for each of them: Camera3 refuses a buffer whose timestamp does not
+    // increase over the previous one on the same stream ("timestamp ... is not
+    // increasing"), and a refused buffer is never latched onto the preview.
+    int64_t timestamp = frame.timestampNs;
+    if (timestamp <= lastDeliveredTimestampNs_) {
+        timestamp = lastDeliveredTimestampNs_ + kFrameTickNs;
+    }
+    lastDeliveredTimestampNs_ = timestamp;
+    ShutterMsg shutter;
+    shutter.frameNumber = request.frameNumber;
+    shutter.timestamp = timestamp;
+    shutter.readoutTimestamp = timestamp;
+    NotifyMsg message;
+    message.set<NotifyMsg::Tag::shutter>(shutter);
+    std::vector<NotifyMsg> notifications;
+    notifications.push_back(std::move(message));
+    const auto notified = callback_->notify(notifications);
+    if (!notified.isOk()) {
+        // The shutter is the only thing the framework has to time the
+        // request, so a failure to deliver it means the request can never
+        // complete: log it and answer the request so the framework's
+        // in-flight list does not keep the frame number forever.
+        __android_log_print(ANDROID_LOG_ERROR, kLogTag,
+                            "notifying the shutter for request %d failed: %s",
+                            request.frameNumber, notified.getDescription().c_str());
+        reportRequestError(request, -1);
+        return;
+    }
+
+    ::aidl::android::hardware::camera::device::CaptureResult result;
+    result.frameNumber = request.frameNumber;
+    result.partialResult = 1;
+    int32_t jpegStreamId = -1;
+    size_t jpegBytes = 0;
+    for (int32_t streamId : request.streamIds) {
+        const Stream* stream = findStream(streamId);
+        if (stream == nullptr) {
+            reportBufferError(request, streamId);
+            continue;
+        }
+        StreamBuffer buffer;
+        if (!requestStreamBuffer(streamId, &buffer)) {
+            // The framework does not reclaim a buffer it was told about
+            // only through ERROR_BUFFER, so its count of outstanding
+            // buffers never reaches zero and the request stays in flight.
+            // Answering the whole request instead closes it out.
+            __android_log_print(ANDROID_LOG_WARN, kLogTag,
+                                "no buffer for stream %d in request %d; reporting the "
+                                "request as failed",
+                                streamId, request.frameNumber);
+            reportRequestError(request, streamId);
+            continue;
+        }
+        size_t bytes = 0;
+        const bool filled = fillStreamBuffer(*stream, buffer, frame, &bytes);
+        // The framework matches a returned buffer by its id, and the handle
+        // must not travel back with it.
+        buffer.buffer.fds.clear();
+        buffer.buffer.ints.clear();
+        buffer.status = filled ? BufferStatus::OK : BufferStatus::ERROR;
+        if (filled && stream->isBlob) {
+            jpegStreamId = streamId;
+            jpegBytes = bytes;
+        }
+        result.outputBuffers.push_back(std::move(buffer));
+    }
+
+    // No reprocessing: the input buffer is unused.
+    result.inputBuffer.streamId = -1;
+
+    MetadataView requestSettings(request.settings);
+    MetadataBuilder metadata;
+    // The framework expects the result to echo the settings it sent.
+    static const int32_t echoKeys[] = {
+            ANDROID_CONTROL_AE_MODE,
+            ANDROID_CONTROL_AF_MODE,
+            ANDROID_CONTROL_AWB_MODE,
+            ANDROID_CONTROL_CAPTURE_INTENT,
+            ANDROID_CONTROL_EFFECT_MODE,
+            ANDROID_CONTROL_MODE,
+            ANDROID_CONTROL_SCENE_MODE,
+            ANDROID_CONTROL_VIDEO_STABILIZATION_MODE,
+            ANDROID_COLOR_CORRECTION_ABERRATION_MODE,
+            ANDROID_EDGE_MODE,
+            ANDROID_NOISE_REDUCTION_MODE,
+            ANDROID_STATISTICS_FACE_DETECT_MODE,
+    };
+    for (int32_t key : echoKeys) {
+        requestSettings.copyTo(metadata, static_cast<uint32_t>(key));
+    }
+    metadata.addInt64(ANDROID_SENSOR_TIMESTAMP, &timestamp, 1);
+    const uint8_t aeState = ANDROID_CONTROL_AE_STATE_CONVERGED;
+    metadata.addByte(ANDROID_CONTROL_AE_STATE, &aeState, 1);
+    const uint8_t afState = ANDROID_CONTROL_AF_STATE_INACTIVE;
+    metadata.addByte(ANDROID_CONTROL_AF_STATE, &afState, 1);
+    const uint8_t awbState = ANDROID_CONTROL_AWB_STATE_CONVERGED;
+    metadata.addByte(ANDROID_CONTROL_AWB_STATE, &awbState, 1);
+    const uint8_t pipelineDepth = 4;
+    metadata.addByte(ANDROID_REQUEST_PIPELINE_DEPTH, &pipelineDepth, 1);
+    const int32_t jpegOrientation = 0;
+    metadata.addInt32(ANDROID_JPEG_ORIENTATION, &jpegOrientation, 1);
+    if (jpegStreamId >= 0) {
+        const int32_t size = static_cast<int32_t>(jpegBytes);
+        metadata.addInt32(ANDROID_JPEG_SIZE, &size, 1);
+    }
+    result.result.metadata = metadata.build();
+
+    // The reply is built as a vector and the result moved into it: the
+    // buffers it carries own file descriptors and cannot be copied.
+    const size_t bufferCount = result.outputBuffers.size();
+    std::vector<aidl::android::hardware::camera::device::CaptureResult> results;
+    results.push_back(std::move(result));
+const auto returned = callback_->processCaptureResult(results);
+if (!returned.isOk()) {
+    __android_log_print(ANDROID_LOG_ERROR, kLogTag, "returning a frame failed: %s",
+                        returned.getDescription().c_str());
+} else {
+    __android_log_print(ANDROID_LOG_DEBUG, kLogTag, "request %d returned %zu buffers",
+                        request.frameNumber, bufferCount);
+}
 }
 
 }  // namespace camera
